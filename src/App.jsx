@@ -44,8 +44,8 @@ const CURRENCIES = [
 ];
 
 // ─── Module-level currency (avoids prop-drilling fmt everywhere) ───────────────
-let _currSym  = "$";
-let _currCode = "CAD";
+let _currSym  = "₹";
+let _currCode = "INR";
 try {
   const c = JSON.parse(localStorage.getItem("fe_currency") || "null");
   if (c) { _currSym = c.symbol; _currCode = c.code; }
@@ -201,10 +201,20 @@ function Login({ onLogin }) {
 
   const go = async () => {
     setErr(""); setBusy(true);
-    const res = isNew ? await signUp(email, pass) : await signIn(email, pass);
+    if (isNew) {
+      const res = await signUp(email, pass);
+      if (res.error) { setErr(res.error.message || "Error"); setBusy(false); return; }
+      if (res.access_token) { onLogin(res.access_token, res.user, res.expires_in); return; }
+      // No immediate token (e.g. email confirmation on) — attempt sign-in anyway
+      const res2 = await signIn(email, pass);
+      setBusy(false);
+      if (res2.access_token) { onLogin(res2.access_token, res2.user, res2.expires_in); return; }
+      setErr(res2.error?.message || "Account created — please sign in.");
+      setIsNew(false); return;
+    }
+    const res = await signIn(email, pass);
     setBusy(false);
     if (res.error) { setErr(res.error.message || "Error"); return; }
-    if (isNew && !res.access_token) { setErr("Account created — disable email confirmation in Supabase Auth settings, then sign in."); setIsNew(false); return; }
     if (res.access_token) onLogin(res.access_token, res.user, res.expires_in);
   };
 
@@ -236,51 +246,14 @@ function Login({ onLogin }) {
   );
 }
 
-// ─── Setup Screen ─────────────────────────────────────────────────────────────
-function Setup({ token, onDone, onOut }) {
-  const [busy, setBusy] = useState(false);
-  const [msg,  setMsg]  = useState("");
-
-  const check = async () => {
-    setBusy(true); setMsg("Checking database…");
-    try {
-      const r = await fetch(`${SUPA_URL}/rest/v1/categories?limit=1`, { headers: AH(token) });
-      if (!r.ok) { setMsg("Tables not found — make sure you ran the SQL first."); setBusy(false); return; }
-      const cats = await r.json();
-      if (Array.isArray(cats) && cats.length === 0) {
-        setMsg("Seeding default categories…");
-        await fetch(`${SUPA_URL}/rest/v1/categories`, { method:"POST", headers:AH(token), body:JSON.stringify(DEFAULT_CATS) });
-      }
-      localStorage.setItem("fe_setup_done", "1");
-      onDone();
-    } catch { setMsg("Connection error — check your internet."); }
-    setBusy(false);
-  };
-
-  return (
-    <div style={{ padding:22, overflowY:"auto", flex:1 }}>
-      <div style={{ fontSize:36, textAlign:"center", marginBottom:10 }}>🛠️</div>
-      <div style={{ fontSize:20, fontWeight:800, color:"var(--tx)", textAlign:"center", marginBottom:8 }}>One-time setup</div>
-      <div style={{ fontSize:13, color:"var(--mu)", textAlign:"center", lineHeight:1.6, marginBottom:16 }}>
-        Go to supabase.com → your project → SQL Editor → paste the schema.sql → Run
-      </div>
-      {msg && <div style={{ background:"#F0FDF4", color:"#166534", padding:"10px 14px", borderRadius:8, fontSize:13, marginBottom:12, fontWeight:500 }}>{msg}</div>}
-      <button className="bp" onClick={check} disabled={busy}>{busy ? "Checking…" : "✅  I ran the SQL — Continue"}</button>
-      <div style={{ height:10 }} />
-      <button className="bg" onClick={onOut}>Sign out</button>
-    </div>
-  );
-}
-
 // ─── Root App ─────────────────────────────────────────────────────────────────
 export default function App() {
   const [token,  setToken]  = useState(() => loadSession()?.token || null);
   const [user,   setUser]   = useState(() => loadSession()?.user  || null);
-  const [ready,  setReady]  = useState(() => !!localStorage.getItem("fe_setup_done"));
   const [darkMode, setDark] = useState(() => localStorage.getItem("fe_dark") === "1");
   const [currency, setCurr] = useState(() => {
-    try { return JSON.parse(localStorage.getItem("fe_currency") || "null") || CURRENCIES[0]; }
-    catch { return CURRENCIES[0]; }
+    try { return JSON.parse(localStorage.getItem("fe_currency") || "null") || CURRENCIES.find(c => c.code === "INR"); }
+    catch { return CURRENCIES.find(c => c.code === "INR"); }
   });
 
   const [tab,    setTab]    = useState("dashboard");
@@ -316,7 +289,7 @@ export default function App() {
     saveSession(t, u, expires_in); setToken(t); setUser(u);
   };
   const handleOut = () => {
-    clearSession(); setToken(null); setUser(null); setReady(false);
+    clearSession(); setToken(null); setUser(null);
   };
 
   const pop = msg => { setToast(msg); setTimeout(() => setToast(null), 2400); };
@@ -340,7 +313,7 @@ export default function App() {
     setLoad(false);
   }, [T]);
 
-  useEffect(() => { if (T && ready) load(); }, [T, ready, load]);
+  useEffect(() => { if (T) load(); }, [T, load]);
 
   const mExp  = useMemo(() => expenses.filter(e => e.date?.startsWith(month)), [expenses, month]);
   const total = useMemo(() => mExp.reduce((s, e) => s + Number(e.amount), 0), [mExp]);
@@ -395,13 +368,6 @@ export default function App() {
     <>
       <style>{STYLES}</style>
       <div className="app"><Login onLogin={handleLogin} /></div>
-    </>
-  );
-
-  if (!ready) return (
-    <>
-      <style>{STYLES}</style>
-      <div className="app"><Setup token={T} onDone={() => setReady(true)} onOut={handleOut} /></div>
     </>
   );
 
