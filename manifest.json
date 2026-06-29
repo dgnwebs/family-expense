@@ -1,0 +1,25 @@
+{
+  "name": "Family Expenses",
+  "short_name": "Expenses",
+  "description": "Track your family spending together",
+  "theme_color": "#1E3A8A",
+  "background_color": "#1E3A8A",
+  "display": "standalone",
+  "orientation": "portrait",
+  "scope": "/family-expense/",
+  "start_url": "/family-expense/",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}
