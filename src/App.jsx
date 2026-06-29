@@ -13,8 +13,9 @@ const api = {
   del:    (p, t)    => fetch(`${SUPA_URL}/rest/v1/${p}`, { method: "DELETE", headers: AH(t) }),
   upsert: (p, b, t) => fetch(`${SUPA_URL}/rest/v1/${p}`, { method: "POST",   headers: { ...AH(t), Prefer: "resolution=merge-duplicates,return=representation" }, body: JSON.stringify(b) }).then(r => r.json()),
 };
-const signIn = (e, p) => fetch(`${SUPA_URL}/auth/v1/token?grant_type=password`, { method: "POST", headers: BASE_H, body: JSON.stringify({ email: e, password: p }) }).then(r => r.json());
-const signUp = (e, p) => fetch(`${SUPA_URL}/auth/v1/signup`,                    { method: "POST", headers: BASE_H, body: JSON.stringify({ email: e, password: p }) }).then(r => r.json());
+const signIn       = (e, p) => fetch(`${SUPA_URL}/auth/v1/token?grant_type=password`,    { method: "POST", headers: BASE_H, body: JSON.stringify({ email: e, password: p }) }).then(r => r.json());
+const signUp       = (e, p) => fetch(`${SUPA_URL}/auth/v1/signup`,                        { method: "POST", headers: BASE_H, body: JSON.stringify({ email: e, password: p }) }).then(r => r.json());
+const refreshAccess = rt   => fetch(`${SUPA_URL}/auth/v1/token?grant_type=refresh_token`, { method: "POST", headers: BASE_H, body: JSON.stringify({ refresh_token: rt }) }).then(r => r.json());
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const DEFAULT_CATS = [
@@ -179,17 +180,23 @@ const IcoAdm = () => (
   </svg>
 );
 
-// ─── Session helpers ──────────────────────────────────────────────────────────
-const loadSession = () => {
-  try {
-    const s = JSON.parse(localStorage.getItem("fe_session") || "null");
-    if (s && s.expires_at > Date.now() / 1000) return s;
-  } catch {}
-  return null;
+// ─── Session helpers (30-day persistent login via refresh token) ──────────────
+const THIRTY_DAYS = 30 * 24 * 3600;
+const SESSION_KEY = "fe_session";
+
+const getRawSession = () => {
+  try { return JSON.parse(localStorage.getItem(SESSION_KEY) || "null"); } catch { return null; }
 };
-const saveSession = (token, user, expires_in) =>
-  localStorage.setItem("fe_session", JSON.stringify({ token, user, expires_at: Date.now() / 1000 + (expires_in || 3600) }));
-const clearSession = () => localStorage.removeItem("fe_session");
+const saveSession = (token, user, expires_in, refresh) => {
+  const existing = getRawSession();
+  localStorage.setItem(SESSION_KEY, JSON.stringify({
+    token, user, refresh,
+    expires_at: Date.now() / 1000 + (expires_in || 3600),
+    // Preserve the original 30-day window; only stamp fresh on first login
+    session_expires_at: existing?.session_expires_at || Date.now() / 1000 + THIRTY_DAYS,
+  }));
+};
+const clearSession = () => localStorage.removeItem(SESSION_KEY);
 
 // ─── Login Screen ─────────────────────────────────────────────────────────────
 function Login({ onLogin }) {
@@ -204,18 +211,18 @@ function Login({ onLogin }) {
     if (isNew) {
       const res = await signUp(email, pass);
       if (res.error) { setErr(res.error.message || "Error"); setBusy(false); return; }
-      if (res.access_token) { onLogin(res.access_token, res.user, res.expires_in); return; }
-      // No immediate token (e.g. email confirmation on) — attempt sign-in anyway
+      if (res.access_token) { onLogin(res.access_token, res.user, res.expires_in, res.refresh_token); return; }
+      // No immediate token — attempt sign-in with same credentials
       const res2 = await signIn(email, pass);
       setBusy(false);
-      if (res2.access_token) { onLogin(res2.access_token, res2.user, res2.expires_in); return; }
+      if (res2.access_token) { onLogin(res2.access_token, res2.user, res2.expires_in, res2.refresh_token); return; }
       setErr(res2.error?.message || "Account created — please sign in.");
       setIsNew(false); return;
     }
     const res = await signIn(email, pass);
     setBusy(false);
     if (res.error) { setErr(res.error.message || "Error"); return; }
-    if (res.access_token) onLogin(res.access_token, res.user, res.expires_in);
+    if (res.access_token) onLogin(res.access_token, res.user, res.expires_in, res.refresh_token);
   };
 
   return (
@@ -248,10 +255,17 @@ function Login({ onLogin }) {
 
 // ─── Root App ─────────────────────────────────────────────────────────────────
 export default function App() {
-  const [token,  setToken]  = useState(() => loadSession()?.token || null);
-  const [user,   setUser]   = useState(() => loadSession()?.user  || null);
-  const [darkMode, setDark] = useState(() => localStorage.getItem("fe_dark") === "1");
-  const [currency, setCurr] = useState(() => {
+  // Read stored session once synchronously
+  const _s = getRawSession();
+  const _sessionAlive = _s && (!_s.session_expires_at || _s.session_expires_at > Date.now() / 1000);
+  const _tokenFresh   = _sessionAlive && _s.expires_at > Date.now() / 1000 + 30;
+
+  const [token,    setToken] = useState(_tokenFresh ? _s.token : null);
+  const [user,     setUser]  = useState(_sessionAlive ? _s.user : null);
+  // booting = we have a live session but access token is stale → need async refresh
+  const [booting,  setBoot]  = useState(_sessionAlive && !_tokenFresh);
+  const [darkMode, setDark]  = useState(() => localStorage.getItem("fe_dark") === "1");
+  const [currency, setCurr]  = useState(() => {
     try { return JSON.parse(localStorage.getItem("fe_currency") || "null") || CURRENCIES.find(c => c.code === "INR"); }
     catch { return CURRENCIES.find(c => c.code === "INR"); }
   });
@@ -266,6 +280,23 @@ export default function App() {
   const [members, setMems]  = useState([]);
   const [budgets, setBuds]  = useState([]);
   const [loading, setLoad]  = useState(false);
+
+  // Silent token refresh on mount when access token has expired but session is still within 30 days
+  useEffect(() => {
+    if (!booting) return;
+    const s = getRawSession();
+    if (!s?.refresh) { clearSession(); setBoot(false); return; }
+    refreshAccess(s.refresh).then(res => {
+      if (res.access_token) {
+        saveSession(res.access_token, res.user || s.user, res.expires_in, res.refresh_token || s.refresh);
+        setToken(res.access_token);
+        setUser(res.user || s.user);
+      } else {
+        clearSession(); // refresh token itself has expired — force re-login
+      }
+      setBoot(false);
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Apply dark mode to <html> so CSS vars cascade to body/root backgrounds
   useEffect(() => {
@@ -285,8 +316,8 @@ export default function App() {
     _currSym = c.symbol; _currCode = c.code;
     setCurr(c); localStorage.setItem("fe_currency", JSON.stringify(c));
   };
-  const handleLogin = (t, u, expires_in) => {
-    saveSession(t, u, expires_in); setToken(t); setUser(u);
+  const handleLogin = (t, u, expires_in, refresh) => {
+    saveSession(t, u, expires_in, refresh); setToken(t); setUser(u);
   };
   const handleOut = () => {
     clearSession(); setToken(null); setUser(null);
@@ -364,6 +395,13 @@ export default function App() {
   };
 
   // ── Render ────────────────────────────────────────────────────────────────
+  if (booting) return (
+    <>
+      <style>{STYLES}</style>
+      <div className="app"><div className="center" style={{ height:"100%" }}><div className="spin" /></div></div>
+    </>
+  );
+
   if (!T) return (
     <>
       <style>{STYLES}</style>
