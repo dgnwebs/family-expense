@@ -254,6 +254,19 @@ const weekRangeLabel = start => {
     ? `${MONTHS[s.getMonth()]} ${s.getDate()}–${e.getDate()}`
     : `${MONTHS[s.getMonth()]} ${s.getDate()} – ${MONTHS[e.getMonth()]} ${e.getDate()}`;
 };
+const shortDate    = d => new Date(d + "T00:00:00").toLocaleDateString("en-US", { month:"short", day:"numeric" });
+const monthShort   = m => MONTHS[+m.split("-")[1] - 1];
+const prevMonthStr = m => { const [y, mo] = m.split("-").map(Number); const d = new Date(y, mo - 2); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; };
+const nextMonthStr = m => { const [y, mo] = m.split("-").map(Number); const d = new Date(y, mo);     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; };
+const relMonthLabel = m => {
+  if (m === curM()) return "This month";
+  const [cy, cm] = curM().split("-").map(Number), [my, mo] = m.split("-").map(Number);
+  const diff = (cy - my) * 12 + (cm - mo);
+  if (diff === 1) return "Last month";
+  if (diff === -1) return "Next month";
+  return diff > 0 ? `${diff} months ago` : `In ${-diff} months`;
+};
+const relWeekLabel = weeksBack => weeksBack === 0 ? "This week" : weeksBack === 1 ? "Last week" : `${weeksBack} weeks ago`;
 
 // ─── Global CSS ───────────────────────────────────────────────────────────────
 const STYLES = `
@@ -345,14 +358,20 @@ const STYLES = `
   .mnav button { width: 34px; height: 34px; border-radius: 50%; background: var(--card); border: 1.5px solid var(--br); font-size: 17px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-family: inherit; color: var(--tx); }
   .mnav span { flex: 1; text-align: center; font-size: 15px; font-weight: 700; color: var(--tx); }
 
-  /* Date range selector — groups the Today/Week/Month tabs and the prev/next
-     nav row into one visual card instead of two floating rows */
-  .drange { background: var(--card); border-radius: 16px; margin: 0 16px 14px; padding: 14px; display: flex; flex-direction: column; gap: 12px; box-shadow: 0 1px 8px rgba(0,0,0,.06); }
-  .drange .tabs { padding: 0; }
-  .drange .tab { background: var(--bg); }
-  .drange .tab.on { background: var(--p); }
-  .drange .mnav { padding: 0; }
-  .drange .mnav button { background: var(--bg); }
+  /* Compact Today/Week/Month segmented control — sits inline next to a
+     screen title instead of its own full-width row */
+  .seg { display: flex; gap: 2px; background: var(--bg); padding: 3px; border-radius: 99px; flex-shrink: 0; }
+  .seg button { padding: 6px 11px; border-radius: 99px; border: none; font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; background: transparent; color: var(--mu); transition: all .15s; white-space: nowrap; }
+  .seg button.on { background: var(--p); color: #fff; }
+
+  /* Date nav card — prev (with preview) | current label | next (with preview) */
+  .drange { background: var(--card); border-radius: 16px; margin: 0 16px 14px; padding: 10px 4px; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 1px 8px rgba(0,0,0,.06); }
+  .drange-side { background: none; border: none; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 4px 12px; color: var(--mu); font-family: inherit; min-width: 56px; }
+  .drange-side .arrow { font-size: 18px; line-height: 1; color: var(--tx); }
+  .drange-side .preview { font-size: 11px; font-weight: 600; }
+  .drange-center { text-align: center; flex: 1; }
+  .drange-main { font-size: 18px; font-weight: 800; color: var(--tx); }
+  .drange-sub { font-size: 12px; color: var(--mu); margin-top: 2px; }
 
   /* Detail row */
   .dr { display: flex; justify-content: space-between; align-items: center; padding: 13px 0; border-bottom: 1px solid var(--br); }
@@ -527,6 +546,8 @@ export default function App() {
   const fontScale = FONT_SIZES.find(f => f.id === fontSize)?.scale || 1;
 
   const [tab,    setTab]    = useState("dashboard");
+  const [adminTab, setAdminTab] = useState("members"); // ScreenAdm's active sub-tab, lifted so the dashboard's settings shortcut can jump straight to it
+  const openSettings = () => { setTab("admin"); setAdminTab("settings"); };
   const [modal,  setModal]  = useState(null);
   const [sel,    setSel]    = useState(null);
   const [toast,  setToast]  = useState(null);
@@ -828,10 +849,10 @@ export default function App() {
         {/* Screen */}
         <div className="scr">
           {loading && <div className="center"><div className="spin" /><span style={{ fontSize:13, color:"var(--mu)" }}>Loading…</span></div>}
-          {!loading && tab === "dashboard" && <ScreenDash rangeExp={rangeExp} rangeTotal={rangeTotal} rangeCatS={rangeCatS} rangeMemS={rangeMemS} catS={catS} cats={cats} members={members} buds={budgets.filter(b => b.month === month)} getCat={getCat} getMem={getMem} dashMode={dashMode} setDashMode={setDashMode} dashDate={dashDate} prevDay={prevDay} nextDay={nextDay} weeksBack={weeksBack} weekStart={weekStart} weekEnd={weekEnd} prevWeek={prevWeek} nextWeek={nextWeek} month={month} prevM={prevM} nextM={nextM} onE={e => { setSel(e); setModal("det"); }} onAll={() => setTab("expenses")} onRefresh={load} darkMode={darkMode} toggleDark={toggleDark} />}
+          {!loading && tab === "dashboard" && <ScreenDash rangeExp={rangeExp} rangeTotal={rangeTotal} rangeCatS={rangeCatS} rangeMemS={rangeMemS} catS={catS} cats={cats} members={members} buds={budgets.filter(b => b.month === month)} getCat={getCat} getMem={getMem} dashMode={dashMode} setDashMode={setDashMode} dashDate={dashDate} prevDay={prevDay} nextDay={nextDay} weeksBack={weeksBack} weekStart={weekStart} weekEnd={weekEnd} prevWeek={prevWeek} nextWeek={nextWeek} month={month} prevM={prevM} nextM={nextM} onE={e => { setSel(e); setModal("det"); }} onAll={() => setTab("expenses")} onSettings={openSettings} />}
           {!loading && tab === "expenses"  && <ScreenExp  expenses={expenses} cats={cats} getCat={getCat} getMem={getMem} onE={e => { setSel(e); setModal("det"); }} isAdmin={isAdminUser} onBulkDelete={bulkDeleteExp} />}
           {!loading && tab === "budgets"   && <ScreenBud  buds={budgets.filter(b => b.month === month)} cats={cats} catS={catS} getCat={getCat} month={month} prevM={prevM} nextM={nextM} onEdit={b => { setSel(b); setModal("eB"); }} onAdd={() => { setSel({ category_id: cats[0]?.id, month, limit_amount: 200 }); setModal("eB"); }} />}
-          {!loading && tab === "admin"     && <ScreenAdm  cats={cats} members={members} expenses={expenses} budgets={budgets} noteHist={noteHist} pendingProfiles={pendingProfiles} onApprove={approveProfile} onDecline={declineProfile} onArchiveMember={archiveMember} getCat={getCat} getMem={getMem} onEC={c => { setSel(c); setModal("eC"); }} onNewCat={() => setModal("newC")} onAM={() => setModal("addM")} onE={e => { setSel(e); setModal("det"); }} onOut={handleOut} user={user} darkMode={darkMode} toggleDark={toggleDark} currency={currency} onCurrency={handleCurrency} fontSize={fontSize} onFontSize={handleFontSize} />}
+          {!loading && tab === "admin"     && <ScreenAdm  cats={cats} members={members} expenses={expenses} budgets={budgets} noteHist={noteHist} pendingProfiles={pendingProfiles} onApprove={approveProfile} onDecline={declineProfile} onArchiveMember={archiveMember} getCat={getCat} getMem={getMem} onEC={c => { setSel(c); setModal("eC"); }} onNewCat={() => setModal("newC")} onAM={() => setModal("addM")} onE={e => { setSel(e); setModal("det"); }} onOut={handleOut} user={user} darkMode={darkMode} toggleDark={toggleDark} currency={currency} onCurrency={handleCurrency} fontSize={fontSize} onFontSize={handleFontSize} t={adminTab} setT={setAdminTab} />}
         </div>
 
         {/* Bottom Nav */}
@@ -859,28 +880,40 @@ export default function App() {
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 // ─── Shared: Today / Week / Month (+ optional All) range selector ─────────────
-function DateRangeTabs({ mode, setMode, modes = ["today", "week", "month"], showAll, dateLabel, onPrev, onNext, prevDisabled, nextDisabled }) {
+// Compact segmented Today/Week/Month control — sits inline next to a screen title
+function RangeModeTabs({ mode, setMode, modes = ["today", "week", "month"], showAll }) {
   const labels = { all:"All", today:"Today", week:"Week", month:"Month" };
   const tabs = [...(showAll ? ["all"] : []), ...modes].map(id => ({ id, lbl: labels[id] }));
   return (
-    <div className="drange">
-      <div className="tabs">
-        {tabs.map(t => (
-          <button key={t.id} className={`tab${mode === t.id ? " on" : ""}`} onClick={() => setMode(t.id)}>{t.lbl}</button>
-        ))}
-      </div>
-      {mode !== "all" && (
-        <div className="mnav">
-          <button onClick={onPrev} disabled={prevDisabled} style={prevDisabled ? { opacity:.35, cursor:"default" } : {}}>‹</button>
-          <span>{dateLabel}</span>
-          <button onClick={onNext} disabled={nextDisabled} style={nextDisabled ? { opacity:.35, cursor:"default" } : {}}>›</button>
-        </div>
-      )}
+    <div className="seg">
+      {tabs.map(t => (
+        <button key={t.id} className={mode === t.id ? "on" : ""} onClick={() => setMode(t.id)}>{t.lbl}</button>
+      ))}
     </div>
   );
 }
 
-function ScreenDash({ rangeExp, rangeTotal, rangeCatS, rangeMemS, catS, cats, members, buds, getCat, getMem, dashMode, setDashMode, dashDate, prevDay, nextDay, weeksBack, weekStart, weekEnd, prevWeek, nextWeek, month, prevM, nextM, onE, onAll, onRefresh, darkMode, toggleDark }) {
+// prev (with preview) | current label + subtitle | next (with preview)
+function RangeNavCard({ mainLabel, subLabel, prevLabel, nextLabel, onPrev, onNext, prevDisabled, nextDisabled }) {
+  return (
+    <div className="drange">
+      <button className="drange-side" onClick={onPrev} disabled={prevDisabled} style={prevDisabled ? { opacity:.35, cursor:"default" } : {}}>
+        <span className="arrow">‹</span>
+        {prevLabel && <span className="preview">{prevLabel}</span>}
+      </button>
+      <div className="drange-center">
+        <div className="drange-main">{mainLabel}</div>
+        {subLabel && <div className="drange-sub">{subLabel}</div>}
+      </div>
+      <button className="drange-side" onClick={onNext} disabled={nextDisabled} style={nextDisabled ? { opacity:.35, cursor:"default" } : {}}>
+        {nextLabel && <span className="preview">{nextLabel}</span>}
+        <span className="arrow">›</span>
+      </button>
+    </div>
+  );
+}
+
+function ScreenDash({ rangeExp, rangeTotal, rangeCatS, rangeMemS, catS, cats, members, buds, getCat, getMem, dashMode, setDashMode, dashDate, prevDay, nextDay, weeksBack, weekStart, weekEnd, prevWeek, nextWeek, month, prevM, nextM, onE, onAll, onSettings }) {
   const top  = useMemo(() => Object.entries(rangeCatS).map(([id, a]) => ({ ...getCat(id), amt: a })).sort((a, b) => b.amt - a.amt).slice(0, 5), [rangeCatS]);
   const maxC = top[0]?.amt || 1;
 
@@ -900,28 +933,32 @@ function ScreenDash({ rangeExp, rangeTotal, rangeCatS, rangeMemS, catS, cats, me
 
   const alerts = dashMode === "month" ? buds.filter(b => (catS[b.category_id] || 0) / b.limit_amount > 0.8) : [];
 
+  const atToday = dashDate >= todayS();
+  const atThisWeek = weeksBack <= 0;
+  const nav = dashMode === "today"
+    ? { main: dayLabel(dashDate), sub: new Date(dashDate + "T00:00:00").toLocaleDateString("en-US", { weekday:"long" }), prev: shortDate(addDays(dashDate, -1)), next: atToday ? null : shortDate(addDays(dashDate, 1)) }
+    : dashMode === "week"
+    ? { main: weekRangeLabel(weekStart), sub: relWeekLabel(weeksBack), prev: shortDate(addDays(weekStart, -7)), next: atThisWeek ? null : shortDate(addDays(weekStart, 7)) }
+    : { main: mLabel(month), sub: relMonthLabel(month), prev: monthShort(prevMonthStr(month)), next: monthShort(nextMonthStr(month)) };
+
   return (
     <div>
       <div className="hd">
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-          <div>
-            <div style={{ fontSize:12, color:"var(--mu)", fontWeight:500, marginBottom:2 }}>Family Expenses</div>
-            <h1>Overview</h1>
-          </div>
+          <h1>Overview</h1>
           <div style={{ display:"flex", gap:8, alignItems:"center" }}>
-            <button onClick={toggleDark} className="theme-btn">{darkMode ? "☀️" : "🌙"}</button>
-            <button onClick={onRefresh} style={{ background:"none", border:"none", fontSize:22, cursor:"pointer", color:"var(--p)" }}>↻</button>
+            <RangeModeTabs mode={dashMode} setMode={setDashMode} />
+            <button onClick={onSettings} className="theme-btn" style={{ padding:"7px 10px" }}>⚙️</button>
           </div>
         </div>
       </div>
 
-      <DateRangeTabs
-        mode={dashMode} setMode={setDashMode}
-        dateLabel={dashMode === "today" ? dayLabel(dashDate) : dashMode === "week" ? weekRangeLabel(weekStart) : mLabel(month)}
+      <RangeNavCard
+        mainLabel={nav.main} subLabel={nav.sub} prevLabel={nav.prev} nextLabel={nav.next}
         onPrev={dashMode === "today" ? prevDay : dashMode === "week" ? prevWeek : prevM}
         onNext={dashMode === "today" ? nextDay : dashMode === "week" ? nextWeek : nextM}
         prevDisabled={dashMode === "week" && weeksBack >= 4}
-        nextDisabled={(dashMode === "today" && dashDate >= todayS()) || (dashMode === "week" && weeksBack <= 0)}
+        nextDisabled={(dashMode === "today" && atToday) || (dashMode === "week" && atThisWeek)}
       />
 
       {/* Hero */}
@@ -1089,14 +1126,26 @@ function ScreenExp({ expenses, cats, getCat, getMem, onE, isAdmin, onBulkDelete 
         <input className="fi" placeholder="🔍  Search…" value={q} onChange={e => setQ(e.target.value)} />
       </div>
 
-      <DateRangeTabs
-        mode={dateMode} setMode={setDateMode} showAll
-        dateLabel={dateMode === "today" ? dayLabel(expDate) : dateMode === "week" ? weekRangeLabel(weekStart) : mLabel(expMonth)}
-        onPrev={dateMode === "today" ? prevDay : dateMode === "week" ? prevWeek : prevMonth}
-        onNext={dateMode === "today" ? nextDay : dateMode === "week" ? nextWeek : nextMonth}
-        prevDisabled={dateMode === "week" && expWeeksBack >= 4}
-        nextDisabled={(dateMode === "today" && expDate >= todayS()) || (dateMode === "week" && expWeeksBack <= 0)}
-      />
+      <div style={{ padding:"0 16px 12px", display:"flex", justifyContent:"center" }}>
+        <RangeModeTabs mode={dateMode} setMode={setDateMode} showAll />
+      </div>
+      {dateMode !== "all" && (() => {
+        const atToday = expDate >= todayS(), atThisWeek = expWeeksBack <= 0;
+        const nav = dateMode === "today"
+          ? { main: dayLabel(expDate), sub: new Date(expDate + "T00:00:00").toLocaleDateString("en-US", { weekday:"long" }), prev: shortDate(addDays(expDate, -1)), next: atToday ? null : shortDate(addDays(expDate, 1)) }
+          : dateMode === "week"
+          ? { main: weekRangeLabel(weekStart), sub: relWeekLabel(expWeeksBack), prev: shortDate(addDays(weekStart, -7)), next: atThisWeek ? null : shortDate(addDays(weekStart, 7)) }
+          : { main: mLabel(expMonth), sub: relMonthLabel(expMonth), prev: monthShort(prevMonthStr(expMonth)), next: monthShort(nextMonthStr(expMonth)) };
+        return (
+          <RangeNavCard
+            mainLabel={nav.main} subLabel={nav.sub} prevLabel={nav.prev} nextLabel={nav.next}
+            onPrev={dateMode === "today" ? prevDay : dateMode === "week" ? prevWeek : prevMonth}
+            onNext={dateMode === "today" ? nextDay : dateMode === "week" ? nextWeek : nextMonth}
+            prevDisabled={dateMode === "week" && expWeeksBack >= 4}
+            nextDisabled={(dateMode === "today" && atToday) || (dateMode === "week" && atThisWeek)}
+          />
+        );
+      })()}
 
       <div className="tabs">
         <button className="chip" style={filt === "all" ? { background:"var(--p)", color:"#fff", borderColor:"var(--p)" } : {}} onClick={() => setFilt("all")}>All</button>
@@ -1184,8 +1233,7 @@ function ScreenBud({ buds, cats, catS, getCat, month, prevM, nextM, onEdit, onAd
 }
 
 // ─── Admin Screen ─────────────────────────────────────────────────────────────
-function ScreenAdm({ cats, members, expenses, budgets, noteHist, pendingProfiles, onApprove, onDecline, onArchiveMember, getCat, getMem, onEC, onNewCat, onAM, onE, onOut, user, darkMode, toggleDark, currency, onCurrency, fontSize, onFontSize }) {
-  const [t, setT] = useState("members");
+function ScreenAdm({ cats, members, expenses, budgets, noteHist, pendingProfiles, onApprove, onDecline, onArchiveMember, getCat, getMem, onEC, onNewCat, onAM, onE, onOut, user, darkMode, toggleDark, currency, onCurrency, fontSize, onFontSize, t, setT }) {
   const [currencyOpen, setCurrencyOpen] = useState(false);
   const isAdmin = user?.email === ADMIN_EMAIL;
   const mt = members.filter(m => !m.archived).map(m => ({ ...m, total: expenses.filter(e => e.paid_by === m.id).reduce((s, e) => s + Number(e.amount), 0), cnt: expenses.filter(e => e.paid_by === m.id).length }));
@@ -1318,9 +1366,14 @@ function ScreenAdm({ cats, members, expenses, budgets, noteHist, pendingProfiles
 
       {t === "reports" && (
         <div>
-          <DateRangeTabs
-            mode={repMode} setMode={setRepMode} modes={["week", "month"]}
-            dateLabel={repMode === "week" ? weekRangeLabel(repWeekStart) : mLabel(repMonth)}
+          <div style={{ padding:"0 16px 12px", display:"flex", justifyContent:"center" }}>
+            <RangeModeTabs mode={repMode} setMode={setRepMode} modes={["week", "month"]} />
+          </div>
+          <RangeNavCard
+            mainLabel={repMode === "week" ? weekRangeLabel(repWeekStart) : mLabel(repMonth)}
+            subLabel={repMode === "week" ? relWeekLabel(repWeeksBack) : relMonthLabel(repMonth)}
+            prevLabel={repMode === "week" ? shortDate(addDays(repWeekStart, -7)) : monthShort(prevMonthStr(repMonth))}
+            nextLabel={repMode === "week" ? (repWeeksBack <= 0 ? null : shortDate(addDays(repWeekStart, 7))) : monthShort(nextMonthStr(repMonth))}
             onPrev={repMode === "week" ? repPrevWeek : repPrevMonth}
             onNext={repMode === "week" ? repNextWeek : repNextMonth}
             prevDisabled={repMode === "week" && repWeeksBack >= 4}
