@@ -654,17 +654,27 @@ export default function App() {
   const [pendingProfiles, setPendingProfiles] = useState([]);
   const isApproved = isAdminUser || myProfile?.status === "approved";
 
+  // Anything other than "approved" or "pending" means access was explicitly
+  // pulled (declined, or revoked via member removal) — checked by name
+  // instead of just "not approved" so a brand-new pending row never trips it.
+  const isRevoked = p => p && p.status !== "approved" && p.status !== "pending";
+  // Tracks the last known status outside of React state so the polling
+  // interval's closure (set up once per effect run) always compares against
+  // the latest value instead of whatever myProfile was when it was created.
+  const lastStatusRef = useRef(null);
+  useEffect(() => { lastStatusRef.current = myProfile?.status ?? null; }, [myProfile]);
+
   useEffect(() => {
     if (!T || !user) return;
     if (isAdminUser) { setCheckingApproval(false); return; } // admin bypasses approval entirely
     setCheckingApproval(true);
     api.get(`profiles?id=eq.${user.id}`, T).then(async res => {
       let p = Array.isArray(res) ? res[0] : null;
-      if (p?.status === "declined") { handleOut(); return; } // explicit decision — don't resurrect on refresh
+      if (isRevoked(p)) { handleOut(); return; } // explicit decision — don't resurrect on refresh
       if (!p) {
         // No profile row at all — the sign-up insert itself failed (declines
-        // are a status, not a deletion, so this never happens from a
-        // decline). Recreate a pending one so the admin can see it.
+        // and revocations are a status, not a deletion, so this never
+        // happens from those). Recreate a pending one so the admin sees it.
         const created = await api.post("profiles", { id: user.id, email: user.email, name: user.email.split("@")[0], status: "pending" }, T).catch(() => null);
         p = Array.isArray(created) ? created[0] : null;
       }
@@ -673,19 +683,24 @@ export default function App() {
     }).catch(() => setCheckingApproval(false));
   }, [T, user, isAdminUser]);
 
-  // While stuck on the "Awaiting approval" screen, poll for a decision so the
-  // user doesn't have to manually sign out and back in to find out.
+  // Keep polling for as long as the user is logged in — not just while
+  // waiting for approval — so that revoking an already-approved member's
+  // access (e.g. removing them from Manage -> Members) signs them out within
+  // one poll cycle instead of leaving their session usable until they
+  // happen to sign out manually. Database access is already blocked
+  // instantly via RLS regardless; this just makes the UI reflect it.
   useEffect(() => {
-    if (!T || !user || isAdminUser || checkingApproval || isApproved) return;
+    if (!T || !user || isAdminUser || checkingApproval) return;
     const id = setInterval(() => {
       api.get(`profiles?id=eq.${user.id}`, T).then(res => {
         const p = Array.isArray(res) ? res[0] : null;
-        if (!p || p.status === "declined") { handleOut(); return; }
-        if (p.status === "approved") { setMyProfile(p); pop("✅ You've been approved!"); }
+        if (!p || isRevoked(p)) { handleOut(); return; }
+        if (p.status === "approved" && lastStatusRef.current !== "approved") pop("✅ You've been approved!");
+        setMyProfile(p);
       }).catch(() => {});
     }, 10000);
     return () => clearInterval(id);
-  }, [T, user, isAdminUser, checkingApproval, isApproved]);
+  }, [T, user, isAdminUser, checkingApproval]);
 
   const load = useCallback(async () => {
     if (!T) return;
@@ -845,6 +860,13 @@ export default function App() {
   const archiveMember = async id => {
     const res = await api.patch(`members?id=eq.${id}`, { archived: true }, T);
     if (Array.isArray(res) && res[0]) setMems(p => p.map(m => m.id === id ? res[0] : m));
+    // If this member has their own login (approved via the sign-up flow),
+    // revoke it too — otherwise they'd keep full read/write access despite
+    // no longer being a selectable payee. Database access is blocked
+    // instantly via RLS; the user's own session is polled and signed out
+    // within ~10s by the effect above. No-op for manually-added members
+    // with no linked login.
+    await api.patch(`profiles?member_id=eq.${id}`, { status: "declined" }, T).catch(() => {});
     pop("👤 Member removed");
   };
   const updCat = async c => {
