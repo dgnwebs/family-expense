@@ -119,6 +119,63 @@ const EMOJI_LIB = [
   { e:"📌", k:"other misc pin general" },
 ];
 
+// ─── Note autocomplete: common items + typical units, used to suggest clean,
+// consistent note text as the user types (e.g. "milk" → "1l Milk", "For Milk") ─
+const QTY_BY_UNIT = {
+  kg: [1, 2, 0.5], l: [1, 2], g: [250, 500], ml: [100, 200],
+  pcs: [1, 2], dozen: [1], pack: [1, 2],
+};
+const NOTE_LEXICON = [
+  { name:"milk", unit:"l" }, { name:"bread", unit:"pcs" }, { name:"eggs", unit:"dozen" },
+  { name:"rice", unit:"kg" }, { name:"atta", unit:"kg" }, { name:"wheat flour", unit:"kg" },
+  { name:"sugar", unit:"kg" }, { name:"salt", unit:"kg" }, { name:"cooking oil", unit:"l" },
+  { name:"ghee", unit:"kg" }, { name:"butter", unit:"g" }, { name:"cheese", unit:"g" },
+  { name:"paneer", unit:"g" }, { name:"curd", unit:"kg" }, { name:"yogurt", unit:"kg" },
+  { name:"tea", unit:"g" }, { name:"coffee", unit:"g" }, { name:"vegetables", unit:"kg" },
+  { name:"onion", unit:"kg" }, { name:"potato", unit:"kg" }, { name:"tomato", unit:"kg" },
+  { name:"fruits", unit:"kg" }, { name:"banana", unit:"dozen" }, { name:"apple", unit:"kg" },
+  { name:"chicken", unit:"kg" }, { name:"mutton", unit:"kg" }, { name:"fish", unit:"kg" },
+  { name:"biscuits", unit:"pack" }, { name:"snacks", unit:"pack" }, { name:"detergent", unit:"kg" },
+  { name:"soap", unit:"pcs" }, { name:"shampoo", unit:"ml" }, { name:"toothpaste", unit:"pcs" },
+  { name:"tissue", unit:"pack" }, { name:"diapers", unit:"pack" }, { name:"baby formula", unit:"pack" },
+  { name:"water", unit:"l" }, { name:"juice", unit:"l" }, { name:"soft drinks", unit:"pack" },
+  { name:"medicine", unit:"pack" }, { name:"petrol", unit:"l" }, { name:"diesel", unit:"l" },
+  { name:"gas cylinder", unit:"pcs" }, { name:"newspaper", unit:"pcs" }, { name:"stationery", unit:"pcs" },
+];
+const titleCase = s => s.replace(/\b\w/g, c => c.toUpperCase());
+
+// Suggestions for the text currently being typed on the last line of a note
+function noteSuggestions(buf, expenses) {
+  if (buf.length < 2) return [];
+
+  // 1. From past notes (your own history — most relevant, learns your phrasing)
+  const freq = {};
+  expenses.forEach(e => {
+    (e.note || "").split("\n").forEach(l => {
+      const t = l.trim();
+      if (t && t.toLowerCase().includes(buf)) freq[t] = (freq[t] || 0) + 1;
+    });
+  });
+  const fromHistory = Object.entries(freq).sort((a, b) => b[1] - a[1]).map(([t]) => t).slice(0, 3);
+
+  // 2. From the built-in grocery/household lexicon, with sensible quantities
+  const fromLexicon = [];
+  for (const item of NOTE_LEXICON) {
+    if (item.name.includes(buf) || buf.includes(item.name)) {
+      const cap = titleCase(item.name);
+      (QTY_BY_UNIT[item.unit] || [1]).slice(0, 2).forEach(q => fromLexicon.push(`${q}${item.unit} ${cap}`));
+      fromLexicon.push(`For ${cap}`);
+    }
+  }
+
+  const out = [...fromHistory];
+  for (const s of fromLexicon) {
+    if (out.length >= 6) break;
+    if (!out.some(x => x.toLowerCase() === s.toLowerCase())) out.push(s);
+  }
+  return out.slice(0, 6);
+}
+
 const CURRENCIES = [
   { code: "CAD", symbol: "$",  name: "Canadian Dollar" },
   { code: "USD", symbol: "$",  name: "US Dollar" },
@@ -510,7 +567,7 @@ export default function App() {
         {toast && <div className="toast">{toast}</div>}
 
         {/* Modals */}
-        {modal === "add"  && <ModalAdd  cats={cats} members={members} onSave={async e => { await addExp(e); setModal(null); }} onClose={() => setModal(null)} />}
+        {modal === "add"  && <ModalAdd  cats={cats} members={members} expenses={expenses} onSave={async e => { await addExp(e); setModal(null); }} onClose={() => setModal(null)} />}
         {modal === "det"  && sel && <ModalDet  exp={sel} getCat={getCat} getMem={getMem} onDel={delExp} onClose={() => { setModal(null); setSel(null); }} />}
         {modal === "addM" && <ModalMem  onSave={addMem} onClose={() => setModal(null)} />}
         {modal === "eC"   && sel && <ModalCat  cat={sel} onSave={updCat} onDel={delCat} onClose={() => { setModal(null); setSel(null); }} />}
@@ -943,7 +1000,7 @@ function ERow({ e, cat, mem, onClick }) {
 }
 
 // ─── Modal: Add Expense ───────────────────────────────────────────────────────
-function ModalAdd({ cats, members, onSave, onClose }) {
+function ModalAdd({ cats, members, expenses, onSave, onClose }) {
   const [amt,  setAmt]  = useState("");
   const [note, setNote] = useState("");
   const [date, setDate] = useState(todayS());
@@ -951,10 +1008,22 @@ function ModalAdd({ cats, members, onSave, onClose }) {
   const [pid,  setPid]  = useState(members[0]?.id || "");
   const [busy, setBusy] = useState(false);
 
+  const suggestions = useMemo(() => {
+    const lines = note.split("\n");
+    const buf = lines[lines.length - 1].trim().toLowerCase();
+    return noteSuggestions(buf, expenses);
+  }, [note, expenses]);
+
+  const pickSuggestion = s => {
+    const lines = note.split("\n");
+    lines[lines.length - 1] = s;
+    setNote(lines.join("\n") + "\n");
+  };
+
   const go = async () => {
     if (!amt || isNaN(+amt)) return;
     setBusy(true);
-    await onSave({ amount: +amt, note, date, category_id: cid, paid_by: pid, tags: [] });
+    await onSave({ amount: +amt, note: note.trim(), date, category_id: cid, paid_by: pid, tags: [] });
     setBusy(false);
   };
 
@@ -998,7 +1067,17 @@ function ModalAdd({ cats, members, onSave, onClose }) {
           </div>
         )}
 
-        <div className="fg"><label className="fl">Note</label><input className="fi" placeholder="What was this for?" value={note} onChange={e => setNote(e.target.value)} /></div>
+        <div className="fg">
+          <label className="fl">Note</label>
+          <textarea className="fi" rows={3} style={{ resize:"vertical", lineHeight:1.5, fontFamily:"inherit" }} placeholder="Type an item, e.g. 'milk' — we'll suggest a clean entry" value={note} onChange={e => setNote(e.target.value)} />
+          {suggestions.length > 0 && (
+            <div style={{ display:"flex", gap:7, flexWrap:"wrap", marginTop:9 }}>
+              {suggestions.map(s => (
+                <button key={s} type="button" className="chip" style={{ background:"var(--ps)", borderColor:"var(--p)", color:"var(--p)" }} onClick={() => pickSuggestion(s)}>{s}</button>
+              ))}
+            </div>
+          )}
+        </div>
         <div className="fg"><label className="fl">Date</label><input className="fi" type="date" value={date} onChange={e => setDate(e.target.value)} /></div>
 
         {members.length === 0 && <div style={{ background:"#FFFBEB", borderRadius:8, padding:11, fontSize:13, color:"var(--am)", marginBottom:14 }}>⚠️ Add a family member first in Manage → Members</div>}
@@ -1024,8 +1103,13 @@ function ModalDet({ exp, getCat, getMem, onDel, onClose }) {
             <div style={{ fontSize:26, fontWeight:800, color:"var(--tx)" }}>{fmt(exp.amount)}</div>
           </div>
         </div>
+        {exp.note && (
+          <div className="dr" style={{ alignItems:"flex-start" }}>
+            <span style={{ fontSize:13, color:"var(--mu)", fontWeight:500, flexShrink:0, marginTop:2 }}>Note</span>
+            <span style={{ fontSize:14, color:"var(--tx)", fontWeight:600, textAlign:"right", whiteSpace:"pre-line", marginLeft:12 }}>{exp.note}</span>
+          </div>
+        )}
         {[
-          { l:"Note",     v: exp.note || "—" },
           { l:"Date",     v: new Date(exp.date + "T00:00:00").toLocaleDateString("en-CA", { weekday:"long", month:"long", day:"numeric", year:"numeric" }) },
           { l:"Paid by",  v: mem?.name || "Unknown" },
           { l:"Category", v: `${cat.icon} ${cat.name}` },
