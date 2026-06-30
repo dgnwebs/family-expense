@@ -776,6 +776,28 @@ export default function App() {
 
   useEffect(() => { if (T && isApproved) load(); }, [T, isApproved, load]);
 
+  // Re-fetch data when the app is resumed (switched back to, or reopened
+  // from the background) — "new pushed changes" usually means new data too
+  // (e.g. an expense someone else added while this device was idle), not
+  // just new app code. Guarded so rapid app-switching doesn't fire repeated
+  // requests back to back.
+  const lastVisibleRefresh = useRef(Date.now());
+  useEffect(() => {
+    if (!T || !isApproved) return;
+    const onVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      if (Date.now() - lastVisibleRefresh.current < 30000) return;
+      lastVisibleRefresh.current = Date.now();
+      load();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+    };
+  }, [T, isApproved, load]);
+
   // ── Pull-to-refresh ─────────────────────────────────────────────────────
   // PWAs running in standalone mode don't get the browser's native
   // pull-to-refresh, so this re-implements it: pulling down while already

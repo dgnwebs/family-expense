@@ -13,6 +13,17 @@ if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/family-expense/sw.js');
   });
+  // The browser only checks for a new service worker on its own schedule
+  // (often ~24h) or on a fresh navigation — neither fires when a PWA is just
+  // resumed from the background, which is the common case on iOS. Explicitly
+  // re-check the moment the app becomes visible again, so a deploy made
+  // while someone's app was backgrounded gets picked up as soon as they
+  // return to it, not on some indefinite later check.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      navigator.serviceWorker.getRegistration().then(reg => reg?.update());
+    }
+  });
 }
 
 createRoot(document.getElementById('root')).render(
