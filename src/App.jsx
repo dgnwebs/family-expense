@@ -660,10 +660,11 @@ export default function App() {
     setCheckingApproval(true);
     api.get(`profiles?id=eq.${user.id}`, T).then(async res => {
       let p = Array.isArray(res) ? res[0] : null;
+      if (p?.status === "declined") { handleOut(); return; } // explicit decision — don't resurrect on refresh
       if (!p) {
-        // No profile row — e.g. a previously declined request, or the
-        // sign-up insert failed. Recreate a pending one so the admin can see
-        // and act on it again rather than leaving the user stuck silently.
+        // No profile row at all — the sign-up insert itself failed (declines
+        // are a status, not a deletion, so this never happens from a
+        // decline). Recreate a pending one so the admin can see it.
         const created = await api.post("profiles", { id: user.id, email: user.email, name: user.email.split("@")[0], status: "pending" }, T).catch(() => null);
         p = Array.isArray(created) ? created[0] : null;
       }
@@ -673,16 +674,13 @@ export default function App() {
   }, [T, user, isAdminUser]);
 
   // While stuck on the "Awaiting approval" screen, poll for a decision so the
-  // user doesn't have to manually sign out and back in to find out. Unlike
-  // the initial check above, a missing profile here means the admin actively
-  // declined them (not a failed signup insert) — sign them out rather than
-  // silently re-queuing a new pending request.
+  // user doesn't have to manually sign out and back in to find out.
   useEffect(() => {
     if (!T || !user || isAdminUser || checkingApproval || isApproved) return;
     const id = setInterval(() => {
       api.get(`profiles?id=eq.${user.id}`, T).then(res => {
         const p = Array.isArray(res) ? res[0] : null;
-        if (!p) { handleOut(); return; }
+        if (!p || p.status === "declined") { handleOut(); return; }
         if (p.status === "approved") { setMyProfile(p); pop("✅ You've been approved!"); }
       }).catch(() => {});
     }, 10000);
@@ -758,7 +756,10 @@ export default function App() {
     }
   };
   const declineProfile = async profile => {
-    await api.del(`profiles?id=eq.${profile.id}`, T);
+    // Soft status, not a delete — a deleted row is indistinguishable from a
+    // failed sign-up insert, which the app auto-recovers from. That caused
+    // a decline -> refresh -> resurrected-as-pending loop.
+    await api.patch(`profiles?id=eq.${profile.id}`, { status: "declined" }, T);
     setPendingProfiles(p => p.filter(x => x.id !== profile.id));
     pop("🗑️ Request declined");
   };
