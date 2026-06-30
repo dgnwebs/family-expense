@@ -294,7 +294,11 @@ const STYLES = `
   .hd p { font-size: 13px; color: var(--mu); margin-top: 2px; }
 
   /* Form */
-  .fi { width: 100%; padding: 15px; border: 1.5px solid var(--br); border-radius: 10px; font-size: 16px; color: var(--tx); background: var(--bg); outline: none; font-family: inherit; transition: border-color .15s; }
+  .fi { width: 100%; max-width: 100%; min-width: 0; padding: 15px; border: 1.5px solid var(--br); border-radius: 10px; font-size: 16px; color: var(--tx); background: var(--bg); outline: none; font-family: inherit; transition: border-color .15s; }
+  /* iOS renders the native date-picker control's own internal layout, which
+     doesn't always shrink to a width:100% parent the way text inputs do —
+     max-width is the property iOS actually respects to cap it. */
+  .fi[type="date"] { max-width: 100%; }
   .fi:focus { border-color: var(--p); }
   .fl { display: block; font-size: 11px; font-weight: 700; color: var(--mu); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 7px; }
   .fg { margin-bottom: 14px; }
