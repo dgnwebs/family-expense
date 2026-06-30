@@ -672,6 +672,23 @@ export default function App() {
     }).catch(() => setCheckingApproval(false));
   }, [T, user, isAdminUser]);
 
+  // While stuck on the "Awaiting approval" screen, poll for a decision so the
+  // user doesn't have to manually sign out and back in to find out. Unlike
+  // the initial check above, a missing profile here means the admin actively
+  // declined them (not a failed signup insert) — sign them out rather than
+  // silently re-queuing a new pending request.
+  useEffect(() => {
+    if (!T || !user || isAdminUser || checkingApproval || isApproved) return;
+    const id = setInterval(() => {
+      api.get(`profiles?id=eq.${user.id}`, T).then(res => {
+        const p = Array.isArray(res) ? res[0] : null;
+        if (!p) { handleOut(); return; }
+        if (p.status === "approved") { setMyProfile(p); pop("✅ You've been approved!"); }
+      }).catch(() => {});
+    }, 10000);
+    return () => clearInterval(id);
+  }, [T, user, isAdminUser, checkingApproval, isApproved]);
+
   const load = useCallback(async () => {
     if (!T) return;
     setLoad(true);
