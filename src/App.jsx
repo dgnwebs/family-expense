@@ -7,11 +7,10 @@ const BASE_H = { "Content-Type": "application/json", apikey: SUPA_KEY };
 const AH = (t) => ({ ...BASE_H, Authorization: "Bearer " + (t || SUPA_KEY), Prefer: "return=representation" });
 
 const api = {
-  get:    (p, t)    => fetch(`${SUPA_URL}/rest/v1/${p}`, { headers: AH(t) }).then(r => r.json()),
-  post:   (p, b, t) => fetch(`${SUPA_URL}/rest/v1/${p}`, { method: "POST",   headers: AH(t), body: JSON.stringify(b) }).then(r => r.json()),
-  patch:  (p, b, t) => fetch(`${SUPA_URL}/rest/v1/${p}`, { method: "PATCH",  headers: AH(t), body: JSON.stringify(b) }).then(r => r.json()),
-  del:    (p, t)    => fetch(`${SUPA_URL}/rest/v1/${p}`, { method: "DELETE", headers: AH(t) }),
-  upsert: (p, b, t) => fetch(`${SUPA_URL}/rest/v1/${p}`, { method: "POST",   headers: { ...AH(t), Prefer: "resolution=merge-duplicates,return=representation" }, body: JSON.stringify(b) }).then(r => r.json()),
+  get:   (p, t)    => fetch(`${SUPA_URL}/rest/v1/${p}`, { headers: AH(t) }).then(r => r.json()),
+  post:  (p, b, t) => fetch(`${SUPA_URL}/rest/v1/${p}`, { method: "POST",   headers: AH(t), body: JSON.stringify(b) }).then(r => r.json()),
+  patch: (p, b, t) => fetch(`${SUPA_URL}/rest/v1/${p}`, { method: "PATCH",  headers: AH(t), body: JSON.stringify(b) }).then(r => r.json()),
+  del:   (p, t)    => fetch(`${SUPA_URL}/rest/v1/${p}`, { method: "DELETE", headers: AH(t) }),
 };
 const signIn       = (e, p) => fetch(`${SUPA_URL}/auth/v1/token?grant_type=password`,    { method: "POST", headers: BASE_H, body: JSON.stringify({ email: e, password: p }) }).then(r => r.json());
 const signUp       = (e, p) => fetch(`${SUPA_URL}/auth/v1/signup`,                        { method: "POST", headers: BASE_H, body: JSON.stringify({ email: e, password: p }) }).then(r => r.json());
@@ -563,7 +562,15 @@ export default function App() {
     setModal(null); pop("✅ Category added");
   };
   const saveBud = async b => {
-    const res = await api.upsert("budgets", { category_id:b.category_id, month:b.month, limit_amount:b.limit_amount }, T);
+    // Edits go straight to the existing row by id. New budgets fall back to
+    // updating any pre-existing row for that category+month instead of
+    // inserting a duplicate (Supabase upsert can't resolve on category_id+month
+    // without an on_conflict target, so we handle it explicitly here).
+    const existing = b.id ? null : budgets.find(x => x.category_id === b.category_id && x.month === b.month);
+    const targetId = b.id || existing?.id;
+    const res = targetId
+      ? await api.patch(`budgets?id=eq.${targetId}`, { category_id:b.category_id, month:b.month, limit_amount:b.limit_amount }, T)
+      : await api.post("budgets", { category_id:b.category_id, month:b.month, limit_amount:b.limit_amount }, T);
     if (Array.isArray(res) && res[0]) setBuds(p => [...p.filter(x => !(x.category_id === b.category_id && x.month === b.month)), res[0]]);
     setModal(null); pop("💰 Budget saved");
   };
