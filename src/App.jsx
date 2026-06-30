@@ -219,6 +219,14 @@ const CURRENCIES = [
   { code: "SGD", symbol: "S$", name: "Singapore Dollar" },
 ];
 
+const FONT_SIZES = [
+  { id: "small",   lbl: "Small",   scale: 0.9 },
+  { id: "default", lbl: "Default", scale: 1   },
+  { id: "big",     lbl: "Big",     scale: 1.15 },
+  { id: "large",   lbl: "Large",   scale: 1.3 },
+  { id: "huge",    lbl: "Huge",    scale: 1.5 },
+];
+
 // ─── Module-level currency (avoids prop-drilling fmt everywhere) ───────────────
 let _currSym  = "₹";
 let _currCode = "INR";
@@ -479,6 +487,8 @@ export default function App() {
     try { return JSON.parse(localStorage.getItem("fe_currency") || "null") || CURRENCIES.find(c => c.code === "INR"); }
     catch { return CURRENCIES.find(c => c.code === "INR"); }
   });
+  const [fontSize, setFontSize] = useState(() => localStorage.getItem("fe_fontsize") || "default");
+  const fontScale = FONT_SIZES.find(f => f.id === fontSize)?.scale || 1;
 
   const [tab,    setTab]    = useState("dashboard");
   const [modal,  setModal]  = useState(null);
@@ -526,6 +536,9 @@ export default function App() {
   const handleCurrency = c => {
     _currSym = c.symbol; _currCode = c.code;
     setCurr(c); localStorage.setItem("fe_currency", JSON.stringify(c));
+  };
+  const handleFontSize = id => {
+    setFontSize(id); localStorage.setItem("fe_fontsize", id);
   };
   const handleLogin = (t, u, expires_in, refresh) => {
     saveSession(t, u, expires_in, refresh); setToken(t); setUser(u);
@@ -661,24 +674,38 @@ export default function App() {
   };
 
   // ── Render ────────────────────────────────────────────────────────────────
+  // `zoom` inflates an element's effective layout size by the scale factor,
+  // so a zoomed-up .app would render wider/taller than the actual phone
+  // viewport and get clipped (no horizontal scroll, just cut-off content) by
+  // the body's overflow:hidden. Dividing width/height by the same factor
+  // cancels that out, so the final rendered box always matches the true
+  // viewport exactly regardless of scale — text/buttons get bigger, the
+  // screen boundary never moves.
+  const appStyle = {
+    zoom: fontScale,
+    width: `calc(100vw / ${fontScale})`,
+    maxWidth: `calc(430px / ${fontScale})`,
+    height: `calc(100vh / ${fontScale})`,
+  };
+
   if (booting) return (
     <>
       <style>{STYLES}</style>
-      <div className="app"><div className="center" style={{ height:"100%" }}><div className="spin" /></div></div>
+      <div className="app" style={appStyle}><div className="center" style={{ height:"100%" }}><div className="spin" /></div></div>
     </>
   );
 
   if (!T) return (
     <>
       <style>{STYLES}</style>
-      <div className="app"><Login onLogin={handleLogin} /></div>
+      <div className="app" style={appStyle}><Login onLogin={handleLogin} /></div>
     </>
   );
 
   return (
     <>
       <style>{STYLES}</style>
-      <div className="app">
+      <div className="app" style={appStyle}>
         {toast && <div className="toast">{toast}</div>}
 
         {/* Modals */}
@@ -695,7 +722,7 @@ export default function App() {
           {!loading && tab === "dashboard" && <ScreenDash rangeExp={rangeExp} rangeTotal={rangeTotal} rangeCatS={rangeCatS} rangeMemS={rangeMemS} catS={catS} cats={cats} members={members} buds={budgets.filter(b => b.month === month)} getCat={getCat} getMem={getMem} dashMode={dashMode} setDashMode={setDashMode} dashDate={dashDate} prevDay={prevDay} nextDay={nextDay} weeksBack={weeksBack} weekStart={weekStart} weekEnd={weekEnd} prevWeek={prevWeek} nextWeek={nextWeek} month={month} prevM={prevM} nextM={nextM} onE={e => { setSel(e); setModal("det"); }} onAll={() => setTab("expenses")} onRefresh={load} darkMode={darkMode} toggleDark={toggleDark} />}
           {!loading && tab === "expenses"  && <ScreenExp  expenses={expenses} cats={cats} getCat={getCat} getMem={getMem} onE={e => { setSel(e); setModal("det"); }} />}
           {!loading && tab === "budgets"   && <ScreenBud  buds={budgets.filter(b => b.month === month)} cats={cats} catS={catS} getCat={getCat} month={month} prevM={prevM} nextM={nextM} onEdit={b => { setSel(b); setModal("eB"); }} onAdd={() => { setSel({ category_id: cats[0]?.id, month, limit_amount: 200 }); setModal("eB"); }} />}
-          {!loading && tab === "admin"     && <ScreenAdm  cats={cats} members={members} expenses={expenses} budgets={budgets} noteHist={noteHist} getCat={getCat} getMem={getMem} onEC={c => { setSel(c); setModal("eC"); }} onNewCat={() => setModal("newC")} onAM={() => setModal("addM")} onE={e => { setSel(e); setModal("det"); }} onOut={handleOut} user={user} darkMode={darkMode} toggleDark={toggleDark} currency={currency} onCurrency={handleCurrency} />}
+          {!loading && tab === "admin"     && <ScreenAdm  cats={cats} members={members} expenses={expenses} budgets={budgets} noteHist={noteHist} getCat={getCat} getMem={getMem} onEC={c => { setSel(c); setModal("eC"); }} onNewCat={() => setModal("newC")} onAM={() => setModal("addM")} onE={e => { setSel(e); setModal("det"); }} onOut={handleOut} user={user} darkMode={darkMode} toggleDark={toggleDark} currency={currency} onCurrency={handleCurrency} fontSize={fontSize} onFontSize={handleFontSize} />}
         </div>
 
         {/* Bottom Nav */}
@@ -1022,7 +1049,7 @@ function ScreenBud({ buds, cats, catS, getCat, month, prevM, nextM, onEdit, onAd
 }
 
 // ─── Admin Screen ─────────────────────────────────────────────────────────────
-function ScreenAdm({ cats, members, expenses, budgets, noteHist, getCat, getMem, onEC, onNewCat, onAM, onE, onOut, user, darkMode, toggleDark, currency, onCurrency }) {
+function ScreenAdm({ cats, members, expenses, budgets, noteHist, getCat, getMem, onEC, onNewCat, onAM, onE, onOut, user, darkMode, toggleDark, currency, onCurrency, fontSize, onFontSize }) {
   const [t, setT] = useState("members");
   const isAdmin = user?.email === ADMIN_EMAIL;
   const mt = members.map(m => ({ ...m, total: expenses.filter(e => e.paid_by === m.id).reduce((s, e) => s + Number(e.amount), 0), cnt: expenses.filter(e => e.paid_by === m.id).length }));
@@ -1233,6 +1260,19 @@ function ScreenAdm({ cats, members, expenses, budgets, noteHist, getCat, getMem,
               <button onClick={toggleDark} style={{ background: darkMode ? "var(--p)" : "var(--bg)", border:"1.5px solid var(--br)", borderRadius:99, padding:"8px 18px", fontSize:14, cursor:"pointer", color: darkMode ? "#fff" : "var(--tx)", fontFamily:"inherit", fontWeight:600 }}>
                 {darkMode ? "☀️ Light" : "🌙 Dark"}
               </button>
+            </div>
+          </div>
+
+          <div className="card" style={{ margin:0 }}>
+            <div style={{ fontSize:15, fontWeight:700, color:"var(--tx)", marginBottom:4 }}>Text size</div>
+            <div style={{ fontSize:12, color:"var(--mu)", marginBottom:14 }}>Make everything bigger and easier to read</div>
+            <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+              {FONT_SIZES.map(f => (
+                <button key={f.id} onClick={() => onFontSize(f.id)} style={{ flex:"1 1 auto", padding:"10px 6px", borderRadius:10, border:`1.5px solid ${fontSize === f.id ? "var(--p)" : "var(--br)"}`, background: fontSize === f.id ? "var(--ps)" : "var(--bg)", cursor:"pointer", fontFamily:"inherit" }}>
+                  <div style={{ fontSize: 13 * f.scale, fontWeight: fontSize === f.id ? 800 : 600, color: fontSize === f.id ? "var(--p)" : "var(--tx)" }}>Aa</div>
+                  <div style={{ fontSize:11, color:"var(--mu)", marginTop:4 }}>{f.lbl}</div>
+                </button>
+              ))}
             </div>
           </div>
 
