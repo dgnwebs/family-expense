@@ -6,11 +6,16 @@ const SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsI
 const BASE_H = { "Content-Type": "application/json", apikey: SUPA_KEY };
 const AH = (t) => ({ ...BASE_H, Authorization: "Bearer " + (t || SUPA_KEY), Prefer: "return=representation" });
 
+// cache: 'no-store' on every call — without it, fetch() can silently serve a
+// stale cached GET response instead of hitting the network, which made
+// pull-to-refresh (and the general data load) appear to do nothing until a
+// full app restart forced a genuinely fresh request. Same lesson as the
+// service worker fix for stale app-shell bundles, applied to the data layer.
 const api = {
-  get:   (p, t)    => fetch(`${SUPA_URL}/rest/v1/${p}`, { headers: AH(t) }).then(r => r.json()),
-  post:  (p, b, t) => fetch(`${SUPA_URL}/rest/v1/${p}`, { method: "POST",   headers: AH(t), body: JSON.stringify(b) }).then(r => r.json()),
-  patch: (p, b, t) => fetch(`${SUPA_URL}/rest/v1/${p}`, { method: "PATCH",  headers: AH(t), body: JSON.stringify(b) }).then(r => r.json()),
-  del:   (p, t)    => fetch(`${SUPA_URL}/rest/v1/${p}`, { method: "DELETE", headers: AH(t) }),
+  get:   (p, t)    => fetch(`${SUPA_URL}/rest/v1/${p}`, { headers: AH(t), cache: "no-store" }).then(r => r.json()),
+  post:  (p, b, t) => fetch(`${SUPA_URL}/rest/v1/${p}`, { method: "POST",   headers: AH(t), body: JSON.stringify(b), cache: "no-store" }).then(r => r.json()),
+  patch: (p, b, t) => fetch(`${SUPA_URL}/rest/v1/${p}`, { method: "PATCH",  headers: AH(t), body: JSON.stringify(b), cache: "no-store" }).then(r => r.json()),
+  del:   (p, t)    => fetch(`${SUPA_URL}/rest/v1/${p}`, { method: "DELETE", headers: AH(t), cache: "no-store" }),
 };
 const signIn       = (e, p) => fetch(`${SUPA_URL}/auth/v1/token?grant_type=password`,    { method: "POST", headers: BASE_H, body: JSON.stringify({ email: e, password: p }) }).then(r => r.json());
 const signUp       = (e, p) => fetch(`${SUPA_URL}/auth/v1/signup`,                        { method: "POST", headers: BASE_H, body: JSON.stringify({ email: e, password: p }) }).then(r => r.json());
