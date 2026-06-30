@@ -38,9 +38,9 @@ const ADMIN_EMAIL = "dgnwebs@gmail.com";
 // ─── EmailJS — notifies the admin of new sign-up requests ─────────────────────
 // Fill these in after setting up a free account at emailjs.com (see chat for
 // step-by-step instructions). Notification is skipped silently until then.
-const EMAILJS_SERVICE_ID  = "";
-const EMAILJS_TEMPLATE_ID = "";
-const EMAILJS_PUBLIC_KEY  = "";
+const EMAILJS_SERVICE_ID  = "service_719cp8i";
+const EMAILJS_TEMPLATE_ID = "template_syyjtm8";
+const EMAILJS_PUBLIC_KEY  = "cOUKaUxAIPXowhLDH";
 
 const notifyAdminSignup = (name, email) => {
   if (!EMAILJS_SERVICE_ID || !EMAILJS_TEMPLATE_ID || !EMAILJS_PUBLIC_KEY) return;
