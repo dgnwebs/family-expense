@@ -1030,6 +1030,8 @@ function ModalAdd({ cats, members, expenses, onSave, onClose }) {
   const [cid,  setCid]  = useState(cats[0]?.id || "");
   const [pid,  setPid]  = useState(members[0]?.id || "");
   const [busy, setBusy] = useState(false);
+  const [pickingCat, setPickingCat] = useState(true);
+  const selectedCat = cats.find(c => c.id === cid);
 
   const suggestions = useMemo(() => {
     const lines = note.split("\n");
@@ -1068,14 +1070,24 @@ function ModalAdd({ cats, members, expenses, onSave, onClose }) {
         {cats.length > 0 && (
           <div className="fg">
             <label className="fl">Category</label>
-            <div className="cg">
-              {cats.map(c => (
-                <div key={c.id} className={`ci${cid === c.id ? " on" : ""}`} onClick={() => setCid(c.id)}>
-                  <div style={{ fontSize:26 }}>{c.icon}</div>
-                  <div style={{ fontSize:11, fontWeight:700, color:"var(--mu)", textAlign:"center", lineHeight:1.2 }}>{c.name}</div>
+            {pickingCat ? (
+              <div className="cg">
+                {cats.map(c => (
+                  <div key={c.id} className={`ci${cid === c.id ? " on" : ""}`} onClick={() => { setCid(c.id); setPickingCat(false); }}>
+                    <div style={{ fontSize:26 }}>{c.icon}</div>
+                    <div style={{ fontSize:11, fontWeight:700, color:"var(--mu)", textAlign:"center", lineHeight:1.2 }}>{c.name}</div>
+                  </div>
+                ))}
+              </div>
+            ) : selectedCat && (
+              <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:10 }}>
+                <div style={{ width:"50%", minWidth:150, display:"flex", flexDirection:"column", alignItems:"center", gap:8, padding:"22px 10px", borderRadius:16, border:"2.5px solid var(--p)", background:"var(--ps)" }}>
+                  <div style={{ fontSize:42 }}>{selectedCat.icon}</div>
+                  <div style={{ fontSize:14, fontWeight:700, color:"var(--tx)", textAlign:"center", lineHeight:1.3 }}>{selectedCat.name}</div>
                 </div>
-              ))}
-            </div>
+                <button type="button" className="chip" onClick={() => setPickingCat(true)}>Change category</button>
+              </div>
+            )}
           </div>
         )}
 
