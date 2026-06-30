@@ -758,6 +758,12 @@ export default function App() {
   // scrolled to the top re-fetches all data.
   const PULL_THRESHOLD = 70;
   const PULL_MAX = 110;
+  // Natural finger jitter during an ordinary tap is rarely perfectly 0px of
+  // vertical movement — without a dead zone, tapping any button near the top
+  // of the page (e.g. the date nav's prev/next buttons) was triggering a
+  // pull state update and CSS transform on .scr mid-tap, which could shift
+  // the button under the finger and cause double-fires or missed taps.
+  const PULL_DEAD_ZONE = 12;
   const scrRef = useRef(null);
   const touchStartY = useRef(null);
   const [pullY, setPullY] = useState(0);
@@ -769,8 +775,11 @@ export default function App() {
   const onTouchMove = e => {
     if (touchStartY.current === null || refreshing) return;
     const dy = e.touches[0].clientY - touchStartY.current;
-    if (dy > 0 && scrRef.current.scrollTop <= 0) setPullY(Math.min(dy * 0.5, PULL_MAX));
-    else { touchStartY.current = null; setPullY(0); }
+    if (dy > PULL_DEAD_ZONE && scrRef.current.scrollTop <= 0) setPullY(Math.min((dy - PULL_DEAD_ZONE) * 0.5, PULL_MAX));
+    else if (dy < 0) { touchStartY.current = null; setPullY(0); }
+    // dy between 0 and the dead zone: still ambiguous (could be a tap or the
+    // start of a pull) — leave pullY untouched so a simple tap's click isn't
+    // disturbed by an unnecessary re-render.
   };
   const onTouchEnd = async () => {
     if (touchStartY.current === null) return;
@@ -782,6 +791,11 @@ export default function App() {
     }
     setPullY(0);
   };
+  // iOS can fire touchcancel instead of touchend if a gesture is interrupted
+  // (e.g. a system swipe) — without this, pullY/touchStartY could get stuck
+  // in a non-zero state, leaving .scr visually offset and taps misaligned
+  // until the next full touch cycle happened to reset it.
+  const onTouchCancel = () => { touchStartY.current = null; setPullY(0); };
 
   const approveProfile = async profile => {
     let newMember = null;
@@ -1002,7 +1016,7 @@ export default function App() {
         )}
 
         {/* Screen */}
-        <div className="scr" ref={scrRef} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}
+        <div className="scr" ref={scrRef} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} onTouchCancel={onTouchCancel}
           style={{ transform: pullY ? `translateY(${pullY}px)` : undefined, transition: pullY ? "none" : "transform .25s" }}>
           {loading && <div className="center"><div className="spin" /><span style={{ fontSize:13, color:"var(--mu)" }}>Loading…</span></div>}
           {!loading && tab === "dashboard" && <ScreenDash rangeExp={rangeExp} rangeTotal={rangeTotal} rangeCatS={rangeCatS} rangeMemS={rangeMemS} catS={catS} cats={cats} members={members} buds={budgets} getCat={getCat} getMem={getMem} dashMode={dashMode} setDashMode={setDashMode} dashDate={dashDate} prevDay={prevDay} nextDay={nextDay} weeksBack={weeksBack} weekStart={weekStart} weekEnd={weekEnd} prevWeek={prevWeek} nextWeek={nextWeek} month={month} prevM={prevM} nextM={nextM} onE={e => { setSel(e); setModal("det"); }} onAll={() => setTab("expenses")} onSettings={openSettings} />}
