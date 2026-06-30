@@ -1580,7 +1580,7 @@ function ModalAdd({ cats, members, noteHist, onSave, onClose }) {
             </div>
           )}
         </div>
-        <div className="fg"><label className="fl">Date</label><input className="fi" type="date" value={date} onChange={e => setDate(e.target.value)} /></div>
+        <div className="fg"><label className="fl">Date</label><input className="fi" type="date" value={date} onChange={e => setDate(e.target.value)} style={{ display:"block", width:"90%", maxWidth:"90%", margin:"0 auto" }} /></div>
 
         {members.length === 0 && <div style={{ background:"#FFFBEB", borderRadius:8, padding:11, fontSize:13, color:"var(--am)", marginBottom:14 }}>⚠️ Add a family member first in Manage → Members</div>}
 
