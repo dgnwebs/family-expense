@@ -274,7 +274,7 @@ const STYLES = `
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; overflow: hidden; }
   #root { display: flex; justify-content: center; align-items: center; }
   .app { display: flex; flex-direction: column; height: 100vh; width: 100%; max-width: 430px; position: relative; background: var(--bg); overflow: hidden; }
-  .scr { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+  .scr { flex: 1; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; }
   .scr::-webkit-scrollbar { display: none; }
 
   /* Nav */
@@ -312,7 +312,7 @@ const STYLES = `
 
   /* Modal */
   .ov { position: absolute; inset: 0; background: rgba(0,0,0,.45); z-index: 200; display: flex; align-items: flex-end; }
-  .mo { background: var(--card); border-radius: 24px 24px 0 0; padding: 22px 20px 36px; width: 100%; max-height: 88vh; overflow-y: auto; }
+  .mo { background: var(--card); border-radius: 24px 24px 0 0; padding: 22px 20px 36px; width: 100%; max-height: 88vh; overflow-y: auto; overflow-x: hidden; }
   .mo::-webkit-scrollbar { display: none; }
   .mh { width: 38px; height: 4px; background: var(--br); border-radius: 99px; margin: 0 auto 18px; }
 
@@ -373,7 +373,7 @@ const STYLES = `
   .fphd { display: flex; align-items: center; gap: 14px; padding: 16px; border-bottom: 1px solid var(--br); background: var(--card); flex-shrink: 0; }
   .fphd .back { width: 36px; height: 36px; border-radius: 50%; background: var(--bg); border: 1.5px solid var(--br); font-size: 18px; cursor: pointer; color: var(--tx); display: flex; align-items: center; justify-content: center; font-family: inherit; flex-shrink: 0; }
   .fphd h2 { font-size: 18px; font-weight: 700; color: var(--tx); }
-  .fpbody { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 20px 16px 36px; }
+  .fpbody { flex: 1; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; padding: 20px 16px 36px; }
   .fpbody::-webkit-scrollbar { display: none; }
 `;
 
