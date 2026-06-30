@@ -784,11 +784,21 @@ export default function App() {
   };
 
   const approveProfile = async profile => {
-    const ini = profile.name.split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2) || "?";
-    const color = PALETTE[members.length % PALETTE.length];
-    const mRes = await api.post("members", { name: profile.name, color, initials: ini, email: profile.email }, T);
-    const newMember = Array.isArray(mRes) && mRes[0];
-    if (newMember) setMems(p => [...p, newMember]);
+    let newMember = null;
+    if (profile.member_id) {
+      // Re-approving someone previously removed — reuse their original
+      // member row (un-archive it) instead of creating a duplicate.
+      const res = await api.patch(`members?id=eq.${profile.member_id}`, { archived: false }, T);
+      newMember = Array.isArray(res) && res[0];
+      if (newMember) setMems(p => p.map(m => m.id === newMember.id ? newMember : m));
+    }
+    if (!newMember) {
+      const ini = profile.name.split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2) || "?";
+      const color = PALETTE[members.length % PALETTE.length];
+      const res = await api.post("members", { name: profile.name, color, initials: ini, email: profile.email }, T);
+      newMember = Array.isArray(res) && res[0];
+      if (newMember) setMems(p => [...p, newMember]);
+    }
     const pRes = await api.patch(`profiles?id=eq.${profile.id}`, { status: "approved", member_id: newMember?.id || null }, T);
     if (Array.isArray(pRes) && pRes[0]) {
       setPendingProfiles(p => p.filter(x => x.id !== profile.id));
@@ -891,7 +901,7 @@ export default function App() {
     // instantly via RLS; the user's own session is polled and signed out
     // within ~10s by the effect above. No-op for manually-added members
     // with no linked login.
-    await api.patch(`profiles?member_id=eq.${id}`, { status: "declined" }, T).catch(() => {});
+    await api.patch(`profiles?member_id=eq.${id}`, { status: "revoked" }, T).catch(() => {});
     pop("👤 Member removed");
   };
   const updCat = async c => {
