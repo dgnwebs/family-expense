@@ -32,7 +32,93 @@ const DEFAULT_CATS = [
 ];
 const PALETTE    = ["#1E3A8A","#3B82F6","#FF6584","#43CFBE","#F59E0B","#EF4444","#22C55E","#EC4899"];
 const MONTHS     = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-const EMOJIS     = ["🛒","🍽️","🚗","💡","🎬","💊","🛍️","📚","✈️","📌","🏠","🐾","☕","🎮","💻","🎓","🍕","🏋️","🎵","🛠️","🧴","🎂","🏥","⚽"];
+
+// Only this account may create, edit, or delete categories (also enforced via Supabase RLS)
+const ADMIN_EMAIL = "dgnwebs@gmail.com";
+
+// { e: emoji, k: searchable keywords }
+const EMOJI_LIB = [
+  { e:"🛒", k:"grocery groceries cart shopping" },
+  { e:"🍽️", k:"dining restaurant food plate eat" },
+  { e:"🍕", k:"pizza food" },
+  { e:"🍔", k:"burger food fast food" },
+  { e:"🍟", k:"fries food fast food" },
+  { e:"🍜", k:"noodles food ramen" },
+  { e:"🥗", k:"salad food healthy" },
+  { e:"☕", k:"coffee cafe drink" },
+  { e:"🍻", k:"beer drinks alcohol bar" },
+  { e:"🍷", k:"wine drinks alcohol" },
+  { e:"🚗", k:"car transport vehicle drive" },
+  { e:"🚕", k:"taxi cab transport ride" },
+  { e:"🚌", k:"bus transport public" },
+  { e:"🚆", k:"train transport metro subway" },
+  { e:"⛽", k:"fuel gas petrol diesel station" },
+  { e:"🅿️", k:"parking transport" },
+  { e:"✈️", k:"flight travel airplane plane" },
+  { e:"🏨", k:"hotel travel stay lodging" },
+  { e:"🏖️", k:"vacation beach holiday travel" },
+  { e:"🧳", k:"luggage travel trip" },
+  { e:"💡", k:"electricity utility bill light power" },
+  { e:"💧", k:"water utility bill" },
+  { e:"🔥", k:"gas utility bill heating" },
+  { e:"📶", k:"internet wifi utility broadband" },
+  { e:"📱", k:"phone mobile bill recharge" },
+  { e:"☎️", k:"phone landline bill" },
+  { e:"🏠", k:"home house rent" },
+  { e:"🏡", k:"home house property" },
+  { e:"🔧", k:"repair maintenance tools fix" },
+  { e:"🛠️", k:"tools repair maintenance" },
+  { e:"🧰", k:"toolbox repair maintenance" },
+  { e:"🛍️", k:"shopping bags retail" },
+  { e:"👕", k:"clothes clothing shopping shirt" },
+  { e:"👗", k:"clothes dress shopping fashion" },
+  { e:"👟", k:"shoes shopping footwear" },
+  { e:"💄", k:"makeup beauty cosmetics" },
+  { e:"💊", k:"medicine health pharmacy drugs" },
+  { e:"🏥", k:"hospital health medical clinic" },
+  { e:"🩺", k:"doctor health medical checkup" },
+  { e:"🦷", k:"dental dentist health teeth" },
+  { e:"🧴", k:"toiletries personal care lotion" },
+  { e:"💇", k:"haircut salon personal care barber" },
+  { e:"🎬", k:"movie entertainment cinema film" },
+  { e:"🎮", k:"gaming entertainment games" },
+  { e:"🎵", k:"music entertainment songs" },
+  { e:"🎤", k:"karaoke music entertainment" },
+  { e:"🎟️", k:"tickets entertainment event" },
+  { e:"📺", k:"tv streaming subscription entertainment" },
+  { e:"📚", k:"books education school reading" },
+  { e:"🎓", k:"education school graduation tuition fees" },
+  { e:"✏️", k:"stationery school supplies pencil" },
+  { e:"🎒", k:"school bag backpack education" },
+  { e:"👶", k:"baby child kids" },
+  { e:"🧸", k:"toys kids child" },
+  { e:"🐾", k:"pets animal" },
+  { e:"🐶", k:"dog pet" },
+  { e:"🐱", k:"cat pet" },
+  { e:"⚽", k:"sports football fitness" },
+  { e:"🏋️", k:"gym fitness exercise workout" },
+  { e:"🏊", k:"swimming sports fitness pool" },
+  { e:"🚴", k:"cycling sports fitness bike" },
+  { e:"💻", k:"computer tech electronics laptop" },
+  { e:"🖨️", k:"printer electronics office" },
+  { e:"📷", k:"camera electronics photography" },
+  { e:"💳", k:"credit card payment finance" },
+  { e:"🏦", k:"bank finance loan" },
+  { e:"💰", k:"money savings finance" },
+  { e:"📈", k:"investment finance stocks" },
+  { e:"🧾", k:"receipt bill invoice" },
+  { e:"🎁", k:"gift present" },
+  { e:"🎂", k:"birthday cake celebration" },
+  { e:"🎉", k:"party celebration event" },
+  { e:"💍", k:"wedding jewelry ring" },
+  { e:"⚖️", k:"legal lawyer fees" },
+  { e:"🧹", k:"cleaning household chores" },
+  { e:"🛡️", k:"insurance protection" },
+  { e:"🐕‍🦺", k:"pet vet animal care" },
+  { e:"🌿", k:"garden plants lawn" },
+  { e:"📌", k:"other misc pin general" },
+];
+
 const CURRENCIES = [
   { code: "CAD", symbol: "$",  name: "Canadian Dollar" },
   { code: "USD", symbol: "$",  name: "US Dollar" },
@@ -153,6 +239,14 @@ const STYLES = `
 
   /* Theme toggle */
   .theme-btn { background: var(--bg); border: 1.5px solid var(--br); border-radius: 99px; padding: 6px 13px; font-size: 14px; cursor: pointer; color: var(--tx); font-family: inherit; display: flex; align-items: center; gap: 6px; }
+
+  /* Full-page screens (e.g. Add Expense) */
+  .fpage { position: absolute; inset: 0; z-index: 200; background: var(--bg); display: flex; flex-direction: column; }
+  .fphd { display: flex; align-items: center; gap: 14px; padding: 16px; border-bottom: 1px solid var(--br); background: var(--card); flex-shrink: 0; }
+  .fphd .back { width: 36px; height: 36px; border-radius: 50%; background: var(--bg); border: 1.5px solid var(--br); font-size: 18px; cursor: pointer; color: var(--tx); display: flex; align-items: center; justify-content: center; font-family: inherit; flex-shrink: 0; }
+  .fphd h2 { font-size: 18px; font-weight: 700; color: var(--tx); }
+  .fpbody { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 20px 16px 36px; }
+  .fpbody::-webkit-scrollbar { display: none; }
 `;
 
 // ─── SVG Icons (currentColor inherits from CSS) ───────────────────────────────
@@ -691,6 +785,7 @@ function ScreenBud({ buds, cats, catS, getCat, month, prevM, nextM, onEdit, onAd
 // ─── Admin Screen ─────────────────────────────────────────────────────────────
 function ScreenAdm({ cats, members, expenses, budgets, getCat, getMem, onEC, onNewCat, onAM, onOut, user, darkMode, toggleDark, currency, onCurrency }) {
   const [t, setT] = useState("members");
+  const isAdmin = user?.email === ADMIN_EMAIL;
   const mt = members.map(m => ({ ...m, total: expenses.filter(e => e.paid_by === m.id).reduce((s, e) => s + Number(e.amount), 0), cnt: expenses.filter(e => e.paid_by === m.id).length }));
   const mx = Math.max(...mt.map(m => m.total), 1);
 
@@ -731,20 +826,21 @@ function ScreenAdm({ cats, members, expenses, budgets, getCat, getMem, onEC, onN
 
       {t === "categories" && (
         <>
+          {!isAdmin && <div style={{ margin:"0 16px 12px", background:"var(--bg)", border:"1.5px solid var(--br)", borderRadius:10, padding:11, fontSize:12, color:"var(--mu)" }}>🔒 Only the account owner can add or edit categories.</div>}
           <div style={{ padding:"0 16px", display:"flex", flexDirection:"column", gap:8, marginBottom:12 }}>
             {cats.map(c => {
               const tot = expenses.filter(e => e.category_id === c.id).reduce((s, e) => s + Number(e.amount), 0);
               const cnt = expenses.filter(e => e.category_id === c.id).length;
               return (
-                <div key={c.id} style={{ background:"var(--card)", borderRadius:12, padding:"13px 15px", display:"flex", alignItems:"center", gap:11, cursor:"pointer", boxShadow:"0 1px 5px rgba(0,0,0,.05)" }} onClick={() => onEC(c)}>
+                <div key={c.id} style={{ background:"var(--card)", borderRadius:12, padding:"13px 15px", display:"flex", alignItems:"center", gap:11, cursor: isAdmin ? "pointer" : "default", boxShadow:"0 1px 5px rgba(0,0,0,.05)" }} onClick={() => isAdmin && onEC(c)}>
                   <div style={{ width:42, height:42, borderRadius:11, background:c.color+"22", display:"flex", alignItems:"center", justifyContent:"center", fontSize:21 }}>{c.icon}</div>
                   <div style={{ flex:1 }}><div style={{ fontSize:15, fontWeight:600, color:"var(--tx)" }}>{c.name}</div><div style={{ fontSize:12, color:"var(--mu)" }}>{cnt} expenses · {fmt(tot)}</div></div>
-                  <div style={{ fontSize:16, color:"var(--mu)" }}>›</div>
+                  {isAdmin && <div style={{ fontSize:16, color:"var(--mu)" }}>›</div>}
                 </div>
               );
             })}
           </div>
-          <div style={{ padding:"0 16px 24px" }}><button className="bp" onClick={onNewCat}>+ Add category</button></div>
+          {isAdmin && <div style={{ padding:"0 16px 24px" }}><button className="bp" onClick={onNewCat}>+ Add category</button></div>}
         </>
       )}
 
@@ -863,12 +959,13 @@ function ModalAdd({ cats, members, onSave, onClose }) {
   };
 
   return (
-    <div className="ov" onClick={onClose}>
-      <div className="mo" onClick={e => e.stopPropagation()}>
-        <div className="mh" />
-        <div style={{ fontSize:20, fontWeight:700, color:"var(--tx)", marginBottom:18 }}>Add expense</div>
-
-        <div style={{ textAlign:"center", background:"var(--bg)", borderRadius:14, padding:"10px 16px", marginBottom:18 }}>
+    <div className="fpage">
+      <div className="fphd">
+        <button className="back" onClick={onClose}>←</button>
+        <h2>Add expense</h2>
+      </div>
+      <div className="fpbody">
+        <div style={{ textAlign:"center", background:"var(--card)", borderRadius:14, padding:"10px 16px", marginBottom:18 }}>
           <div style={{ fontSize:11, color:"var(--mu)", fontWeight:700, marginBottom:4, textTransform:"uppercase", letterSpacing:.5 }}>Amount ({_currCode})</div>
           <div style={{ display:"flex", alignItems:"center", justifyContent:"center" }}>
             <span style={{ fontSize:30, fontWeight:800, color:"var(--mu)" }}>{_currSym}</span>
@@ -907,7 +1004,6 @@ function ModalAdd({ cats, members, onSave, onClose }) {
         {members.length === 0 && <div style={{ background:"#FFFBEB", borderRadius:8, padding:11, fontSize:13, color:"var(--am)", marginBottom:14 }}>⚠️ Add a family member first in Manage → Members</div>}
 
         <button className="bp" onClick={go} disabled={!amt || busy || members.length === 0}>{busy ? "Saving…" : "Save expense"}</button>
-        <div style={{ height:9 }} /><button className="bg" onClick={onClose}>Cancel</button>
       </div>
     </div>
   );
@@ -980,6 +1076,13 @@ function ModalCat({ cat, onSave, onDel, onClose, isNew }) {
   const [name,  setName]  = useState(cat.name);
   const [icon,  setIcon]  = useState(cat.icon);
   const [color, setColor] = useState(cat.color);
+  const [iconQ, setIconQ] = useState("");
+
+  const iconResults = useMemo(() => {
+    if (!iconQ.trim()) return EMOJI_LIB;
+    const q = iconQ.trim().toLowerCase();
+    return EMOJI_LIB.filter(x => x.k.includes(q));
+  }, [iconQ]);
 
   return (
     <div className="ov" onClick={onClose}>
@@ -992,8 +1095,12 @@ function ModalCat({ cat, onSave, onDel, onClose, isNew }) {
         <div className="fg"><label className="fl">Name</label><input className="fi" value={name} placeholder="Category name" onChange={e => setName(e.target.value)} /></div>
         <div className="fg">
           <label className="fl">Icon</label>
-          <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
-            {EMOJIS.map(e => <div key={e} onClick={() => setIcon(e)} style={{ width:46, height:46, border: icon === e ? "2.5px solid var(--p)" : "1.5px solid var(--br)", borderRadius:11, display:"flex", alignItems:"center", justifyContent:"center", fontSize:24, cursor:"pointer", background: icon === e ? "var(--ps)" : "var(--bg)" }}>{e}</div>)}
+          <input className="fi" style={{ marginBottom:10 }} placeholder="🔍  Search icons… (e.g. food, travel, gym)" value={iconQ} onChange={e => setIconQ(e.target.value)} />
+          <div style={{ display:"flex", gap:8, flexWrap:"wrap", maxHeight:220, overflowY:"auto" }}>
+            {iconResults.length === 0
+              ? <div style={{ fontSize:13, color:"var(--mu)", padding:"8px 2px" }}>No icons match "{iconQ}"</div>
+              : iconResults.map(({ e }) => <div key={e} onClick={() => setIcon(e)} style={{ width:46, height:46, border: icon === e ? "2.5px solid var(--p)" : "1.5px solid var(--br)", borderRadius:11, display:"flex", alignItems:"center", justifyContent:"center", fontSize:24, cursor:"pointer", background: icon === e ? "var(--ps)" : "var(--bg)", flexShrink:0 }}>{e}</div>)
+            }
           </div>
         </div>
         <div className="fg">
