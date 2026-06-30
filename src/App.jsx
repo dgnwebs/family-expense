@@ -222,6 +222,20 @@ const fmt    = n  => `${_currSym}${Number(n).toFixed(2).replace(/\B(?=(\d{3})+(?
 const todayS = () => new Date().toISOString().slice(0, 10);
 const curM   = () => new Date().toISOString().slice(0, 7);
 const mLabel = m  => { const [y, mo] = m.split("-"); return `${MONTHS[+mo - 1]} ${y}`; };
+const addDays = (d, n) => { const dt = new Date(d + "T00:00:00"); dt.setDate(dt.getDate() + n); return dt.toISOString().slice(0, 10); };
+const startOfWeek = d => { const dt = new Date(d + "T00:00:00"); const day = dt.getDay(); dt.setDate(dt.getDate() + (day === 0 ? -6 : 1 - day)); return dt.toISOString().slice(0, 10); };
+const dayLabel = d => {
+  if (d === todayS()) return "Today";
+  if (d === addDays(todayS(), -1)) return "Yesterday";
+  return new Date(d + "T00:00:00").toLocaleDateString("en-US", { weekday:"short", month:"short", day:"numeric" });
+};
+const weekRangeLabel = start => {
+  const end = addDays(start, 6);
+  const s = new Date(start + "T00:00:00"), e = new Date(end + "T00:00:00");
+  return s.getMonth() === e.getMonth()
+    ? `${MONTHS[s.getMonth()]} ${s.getDate()}–${e.getDate()}`
+    : `${MONTHS[s.getMonth()]} ${s.getDate()} – ${MONTHS[e.getMonth()]} ${e.getDate()}`;
+};
 
 // ─── Global CSS ───────────────────────────────────────────────────────────────
 const STYLES = `
@@ -520,15 +534,38 @@ export default function App() {
   useEffect(() => { if (T) load(); }, [T, load]);
 
   const mExp  = useMemo(() => expenses.filter(e => e.date?.startsWith(month)), [expenses, month]);
-  const total = useMemo(() => mExp.reduce((s, e) => s + Number(e.amount), 0), [mExp]);
+  // catS stays month-scoped — it's what budgets (always monthly limits) compare against,
+  // used by both the Budgets screen and the Dashboard's Budget Alerts card.
   const catS  = useMemo(() => { const m = {}; mExp.forEach(e => { m[e.category_id] = (m[e.category_id] || 0) + Number(e.amount); }); return m; }, [mExp]);
-  const memS  = useMemo(() => { const m = {}; mExp.forEach(e => { m[e.paid_by]     = (m[e.paid_by]     || 0) + Number(e.amount); }); return m; }, [mExp]);
 
   const getCat = id => cats.find(c => c.id === id)    || { name:"Other",   icon:"📌", color:"#607D8B" };
   const getMem = id => members.find(m => m.id === id) || { name:"Unknown", color:"#999", initials:"?" };
 
   const prevM = () => { const [y,m]=month.split("-").map(Number),d=new Date(y,m-2); setMonth(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`); };
   const nextM = () => { const [y,m]=month.split("-").map(Number),d=new Date(y,m);   setMonth(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`); };
+
+  // ── Dashboard date-range selector (Today / Week / Month) — independent of
+  // the Budgets screen's `month`, except "Month" mode which shares it ──────
+  const [dashMode, setDashMode] = useState("month"); // "today" | "week" | "month"
+  const [dashDate, setDashDate] = useState(todayS());
+  const [weeksBack, setWeeksBack] = useState(0); // 0 = this week, capped at 4 weeks back
+
+  const weekStart = useMemo(() => startOfWeek(addDays(todayS(), -7 * weeksBack)), [weeksBack]);
+  const weekEnd   = useMemo(() => addDays(weekStart, 6), [weekStart]);
+
+  const rangeExp = useMemo(() => {
+    if (dashMode === "today") return expenses.filter(e => e.date === dashDate);
+    if (dashMode === "week")  return expenses.filter(e => e.date >= weekStart && e.date <= weekEnd);
+    return mExp;
+  }, [dashMode, expenses, dashDate, weekStart, weekEnd, mExp]);
+  const rangeTotal = useMemo(() => rangeExp.reduce((s, e) => s + Number(e.amount), 0), [rangeExp]);
+  const rangeCatS  = useMemo(() => { const m = {}; rangeExp.forEach(e => { m[e.category_id] = (m[e.category_id] || 0) + Number(e.amount); }); return m; }, [rangeExp]);
+  const rangeMemS  = useMemo(() => { const m = {}; rangeExp.forEach(e => { m[e.paid_by]     = (m[e.paid_by]     || 0) + Number(e.amount); }); return m; }, [rangeExp]);
+
+  const prevDay  = () => setDashDate(d => addDays(d, -1));
+  const nextDay  = () => setDashDate(d => { const n = addDays(d, 1); return n > todayS() ? d : n; });
+  const prevWeek = () => setWeeksBack(w => Math.min(w + 1, 4));
+  const nextWeek = () => setWeeksBack(w => Math.max(w - 1, 0));
 
   // ── CRUD ──────────────────────────────────────────────────────────────────
   const addExp = async exp => {
@@ -607,7 +644,7 @@ export default function App() {
         {/* Screen */}
         <div className="scr">
           {loading && <div className="center"><div className="spin" /><span style={{ fontSize:13, color:"var(--mu)" }}>Loading…</span></div>}
-          {!loading && tab === "dashboard" && <ScreenDash mExp={mExp} total={total} cats={cats} members={members} buds={budgets.filter(b => b.month === month)} catS={catS} memS={memS} getCat={getCat} getMem={getMem} month={month} prevM={prevM} nextM={nextM} onE={e => { setSel(e); setModal("det"); }} onAll={() => setTab("expenses")} onRefresh={load} darkMode={darkMode} toggleDark={toggleDark} />}
+          {!loading && tab === "dashboard" && <ScreenDash rangeExp={rangeExp} rangeTotal={rangeTotal} rangeCatS={rangeCatS} rangeMemS={rangeMemS} catS={catS} cats={cats} members={members} buds={budgets.filter(b => b.month === month)} getCat={getCat} getMem={getMem} dashMode={dashMode} setDashMode={setDashMode} dashDate={dashDate} prevDay={prevDay} nextDay={nextDay} weeksBack={weeksBack} weekStart={weekStart} weekEnd={weekEnd} prevWeek={prevWeek} nextWeek={nextWeek} month={month} prevM={prevM} nextM={nextM} onE={e => { setSel(e); setModal("det"); }} onAll={() => setTab("expenses")} onRefresh={load} darkMode={darkMode} toggleDark={toggleDark} />}
           {!loading && tab === "expenses"  && <ScreenExp  expenses={expenses} cats={cats} getCat={getCat} getMem={getMem} onE={e => { setSel(e); setModal("det"); }} />}
           {!loading && tab === "budgets"   && <ScreenBud  buds={budgets.filter(b => b.month === month)} cats={cats} catS={catS} getCat={getCat} month={month} prevM={prevM} nextM={nextM} onEdit={b => { setSel(b); setModal("eB"); }} onAdd={() => { setSel({ category_id: cats[0]?.id, month, limit_amount: 200 }); setModal("eB"); }} />}
           {!loading && tab === "admin"     && <ScreenAdm  cats={cats} members={members} expenses={expenses} budgets={budgets} getCat={getCat} getMem={getMem} onEC={c => { setSel(c); setModal("eC"); }} onNewCat={() => setModal("newC")} onAM={() => setModal("addM")} onOut={handleOut} user={user} darkMode={darkMode} toggleDark={toggleDark} currency={currency} onCurrency={handleCurrency} />}
@@ -637,12 +674,21 @@ export default function App() {
 }
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
-function ScreenDash({ mExp, total, cats, members, buds, catS, memS, getCat, getMem, month, prevM, nextM, onE, onAll, onRefresh, darkMode, toggleDark }) {
-  const top  = useMemo(() => Object.entries(catS).map(([id, a]) => ({ ...getCat(id), amt: a })).sort((a, b) => b.amt - a.amt).slice(0, 5), [catS]);
+function ScreenDash({ rangeExp, rangeTotal, rangeCatS, rangeMemS, catS, cats, members, buds, getCat, getMem, dashMode, setDashMode, dashDate, prevDay, nextDay, weeksBack, weekStart, weekEnd, prevWeek, nextWeek, month, prevM, nextM, onE, onAll, onRefresh, darkMode, toggleDark }) {
+  const top  = useMemo(() => Object.entries(rangeCatS).map(([id, a]) => ({ ...getCat(id), amt: a })).sort((a, b) => b.amt - a.amt).slice(0, 5), [rangeCatS]);
   const maxC = top[0]?.amt || 1;
-  const wk   = [0,1,2,3].map(i => { const s = i*7+1, e = s+6; return mExp.filter(x => { const d = parseInt(x.date?.slice(8) || 0); return d >= s && d <= e; }).reduce((s, x) => s + Number(x.amount), 0); });
-  const maxW = Math.max(...wk, 1);
-  const alerts = buds.filter(b => (catS[b.category_id] || 0) / b.limit_amount > 0.8);
+
+  // Month mode: 4 weekly buckets. Week mode: 7 daily bars. Today mode: no chart.
+  const wk = dashMode === "month"
+    ? [0,1,2,3].map(i => { const s = i*7+1, e = s+6; return rangeExp.filter(x => { const d = parseInt(x.date?.slice(8) || 0); return d >= s && d <= e; }).reduce((s, x) => s + Number(x.amount), 0); })
+    : [];
+  const days = dashMode === "week" ? [0,1,2,3,4,5,6].map(i => addDays(weekStart, i)) : [];
+  const dy   = dashMode === "week" ? days.map(d => rangeExp.filter(e => e.date === d).reduce((s, e) => s + Number(e.amount), 0)) : [];
+  const chartVals  = dashMode === "month" ? wk : dy;
+  const chartLbls  = dashMode === "month" ? wk.map((_, i) => `W${i + 1}`) : days.map(d => new Date(d + "T00:00:00").toLocaleDateString("en-US", { weekday:"short" }));
+  const maxChart   = Math.max(...chartVals, 1);
+
+  const alerts = dashMode === "month" ? buds.filter(b => (catS[b.category_id] || 0) / b.limit_amount > 0.8) : [];
 
   return (
     <div>
@@ -659,19 +705,41 @@ function ScreenDash({ mExp, total, cats, members, buds, catS, memS, getCat, getM
         </div>
       </div>
 
-      <div className="mnav">
-        <button onClick={prevM}>‹</button>
-        <span>{mLabel(month)}</span>
-        <button onClick={nextM}>›</button>
+      <div className="tabs">
+        {[{ id:"today", lbl:"Today" }, { id:"week", lbl:"Week" }, { id:"month", lbl:"Month" }].map(m => (
+          <button key={m.id} className={`tab${dashMode === m.id ? " on" : ""}`} onClick={() => setDashMode(m.id)}>{m.lbl}</button>
+        ))}
       </div>
+
+      {dashMode === "today" && (
+        <div className="mnav">
+          <button onClick={prevDay}>‹</button>
+          <span>{dayLabel(dashDate)}</span>
+          <button onClick={nextDay} disabled={dashDate >= todayS()} style={dashDate >= todayS() ? { opacity:.35, cursor:"default" } : {}}>›</button>
+        </div>
+      )}
+      {dashMode === "week" && (
+        <div className="mnav">
+          <button onClick={prevWeek} disabled={weeksBack >= 4} style={weeksBack >= 4 ? { opacity:.35, cursor:"default" } : {}}>‹</button>
+          <span>{weekRangeLabel(weekStart)}</span>
+          <button onClick={nextWeek} disabled={weeksBack <= 0} style={weeksBack <= 0 ? { opacity:.35, cursor:"default" } : {}}>›</button>
+        </div>
+      )}
+      {dashMode === "month" && (
+        <div className="mnav">
+          <button onClick={prevM}>‹</button>
+          <span>{mLabel(month)}</span>
+          <button onClick={nextM}>›</button>
+        </div>
+      )}
 
       {/* Hero */}
       <div className="hero">
         <div style={{ fontSize:12, fontWeight:500, opacity:.8, textTransform:"uppercase", letterSpacing:.5 }}>Total spent</div>
-        <div style={{ fontSize:38, fontWeight:800, letterSpacing:-1, margin:"6px 0 2px" }}>{fmt(total)}</div>
-        <div style={{ fontSize:13, opacity:.75 }}>{mExp.length} transactions · {_currCode}</div>
+        <div style={{ fontSize:38, fontWeight:800, letterSpacing:-1, margin:"6px 0 2px" }}>{fmt(rangeTotal)}</div>
+        <div style={{ fontSize:13, opacity:.75 }}>{rangeExp.length} transactions · {_currCode}</div>
         <div style={{ display:"flex", justifyContent:"space-between", marginTop:18 }}>
-          {[{ v: members.length, l:"Members" }, { v: fmt(total / Math.max(mExp.length, 1)), l:"Avg/expense" }, { v: buds.length, l:"Budgets" }].map((s, i) => (
+          {[{ v: members.length, l:"Members" }, { v: fmt(rangeTotal / Math.max(rangeExp.length, 1)), l:"Avg/expense" }, { v: buds.length, l:"Budgets" }].map((s, i) => (
             <div key={i} style={{ textAlign:"center" }}>
               <div style={{ fontSize:17, fontWeight:700 }}>{s.v}</div>
               <div style={{ fontSize:11, opacity:.75, marginTop:2 }}>{s.l}</div>
@@ -680,19 +748,21 @@ function ScreenDash({ mExp, total, cats, members, buds, catS, memS, getCat, getM
         </div>
       </div>
 
-      {/* Weekly bars */}
-      <div className="card">
-        <div style={{ fontSize:15, fontWeight:700, color:"var(--tx)", marginBottom:14 }}>Weekly spending</div>
-        <div style={{ display:"flex", alignItems:"flex-end", gap:8, height:110, padding:"0 2px" }}>
-          {wk.map((v, i) => (
-            <div key={i} style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:5, height:"100%", justifyContent:"flex-end" }}>
-              <div style={{ fontSize:9, color:"var(--mu)", fontWeight:600 }}>{v > 0 ? fmt(v) : ""}</div>
-              <div style={{ width:"100%", borderRadius:"5px 5px 0 0", minHeight:4, background:"var(--p)", opacity: v === Math.max(...wk) && v > 0 ? 1 : .35, height: Math.max((v / maxW) * 85, v > 0 ? 5 : 0) + "px" }} />
-              <div style={{ fontSize:10, color:"var(--mu)", fontWeight:500 }}>W{i + 1}</div>
-            </div>
-          ))}
+      {/* Spending chart — weekly buckets in Month mode, daily bars in Week mode */}
+      {dashMode !== "today" && (
+        <div className="card">
+          <div style={{ fontSize:15, fontWeight:700, color:"var(--tx)", marginBottom:14 }}>{dashMode === "week" ? "Daily spending" : "Weekly spending"}</div>
+          <div style={{ display:"flex", alignItems:"flex-end", gap:8, height:110, padding:"0 2px" }}>
+            {chartVals.map((v, i) => (
+              <div key={i} style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:5, height:"100%", justifyContent:"flex-end" }}>
+                <div style={{ fontSize:9, color:"var(--mu)", fontWeight:600 }}>{v > 0 ? fmt(v) : ""}</div>
+                <div style={{ width:"100%", borderRadius:"5px 5px 0 0", minHeight:4, background:"var(--p)", opacity: v === Math.max(...chartVals) && v > 0 ? 1 : .35, height: Math.max((v / maxChart) * 85, v > 0 ? 5 : 0) + "px" }} />
+                <div style={{ fontSize:10, color:"var(--mu)", fontWeight:500 }}>{chartLbls[i]}</div>
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Category breakdown */}
       {top.length > 0 && (
@@ -704,7 +774,7 @@ function ScreenDash({ mExp, total, cats, members, buds, catS, memS, getCat, getM
                 <span style={{ fontSize:17 }}>{c.icon}</span>
                 <span style={{ flex:1, fontSize:14, fontWeight:600, color:"var(--tx)" }}>{c.name}</span>
                 <span style={{ fontSize:14, fontWeight:700 }}>{fmt(c.amt)}</span>
-                <span style={{ fontSize:11, color:"var(--mu)" }}>{Math.round(c.amt / total * 100)}%</span>
+                <span style={{ fontSize:11, color:"var(--mu)" }}>{Math.round(c.amt / rangeTotal * 100)}%</span>
               </div>
               <div className="lbb"><div className="lb" style={{ width: (c.amt / maxC * 100) + "%", background: c.color }} /></div>
             </div>
@@ -713,18 +783,18 @@ function ScreenDash({ mExp, total, cats, members, buds, catS, memS, getCat, getM
       )}
 
       {/* Who paid */}
-      {members.filter(m => memS[m.id]).length > 0 && (
+      {members.filter(m => rangeMemS[m.id]).length > 0 && (
         <>
           <div style={{ padding:"6px 20px 10px", fontSize:15, fontWeight:700, color:"var(--tx)" }}>Who paid</div>
           <div style={{ padding:"0 16px 12px", display:"flex", flexDirection:"column", gap:8 }}>
-            {members.filter(m => memS[m.id]).map(m => {
-              const a = memS[m.id] || 0;
+            {members.filter(m => rangeMemS[m.id]).map(m => {
+              const a = rangeMemS[m.id] || 0;
               return (
                 <div key={m.id} style={{ background:"var(--card)", borderRadius:12, padding:"13px 15px", display:"flex", alignItems:"center", gap:11, boxShadow:"0 1px 5px rgba(0,0,0,.05)" }}>
                   <div className="av" style={{ width:40, height:40, fontSize:13, background:m.color }}>{m.initials}</div>
                   <div style={{ flex:1 }}>
                     <div style={{ fontSize:15, fontWeight:600, color:"var(--tx)" }}>{m.name}</div>
-                    <div style={{ fontSize:12, color:"var(--mu)" }}>{Math.round(a / total * 100)}% of total</div>
+                    <div style={{ fontSize:12, color:"var(--mu)" }}>{Math.round(a / rangeTotal * 100)}% of total</div>
                   </div>
                   <div style={{ fontSize:16, fontWeight:700, color:"var(--tx)" }}>{fmt(a)}</div>
                 </div>
@@ -734,7 +804,7 @@ function ScreenDash({ mExp, total, cats, members, buds, catS, memS, getCat, getM
         </>
       )}
 
-      {/* Budget alerts */}
+      {/* Budget alerts — only meaningful against the full month's spend */}
       {alerts.length > 0 && (
         <>
           <div style={{ padding:"6px 20px 10px", fontSize:15, fontWeight:700, color:"var(--tx)" }}>⚠️ Budget alerts</div>
@@ -761,9 +831,9 @@ function ScreenDash({ mExp, total, cats, members, buds, catS, memS, getCat, getM
         <div style={{ fontSize:15, fontWeight:700, color:"var(--tx)" }}>Recent</div>
         <button style={{ background:"none", border:"none", color:"var(--p)", fontSize:13, fontWeight:600, cursor:"pointer" }} onClick={onAll}>See all</button>
       </div>
-      {mExp.length === 0
+      {rangeExp.length === 0
         ? <div className="center"><span style={{ fontSize:44 }}>🧾</span><div style={{ fontSize:17, fontWeight:700, color:"var(--tx)" }}>No expenses yet</div><div style={{ fontSize:13 }}>Tap + to add your first one</div></div>
-        : <div style={{ padding:"0 16px", display:"flex", flexDirection:"column", gap:8, paddingBottom:24 }}>{mExp.slice(0, 6).map(e => <ERow key={e.id} e={e} cat={getCat(e.category_id)} mem={getMem(e.paid_by)} onClick={() => onE(e)} />)}</div>
+        : <div style={{ padding:"0 16px", display:"flex", flexDirection:"column", gap:8, paddingBottom:24 }}>{rangeExp.slice(0, 6).map(e => <ERow key={e.id} e={e} cat={getCat(e.category_id)} mem={getMem(e.paid_by)} onClick={() => onE(e)} />)}</div>
       }
     </div>
   );
