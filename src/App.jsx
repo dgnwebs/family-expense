@@ -775,16 +775,18 @@ export default function App() {
     setModal(null); pop("✅ Category added");
   };
   const saveBud = async b => {
-    // Edits go straight to the existing row by id. New budgets fall back to
-    // updating any pre-existing row for that category+month instead of
-    // inserting a duplicate (Supabase upsert can't resolve on category_id+month
-    // without an on_conflict target, so we handle it explicitly here).
-    const existing = b.id ? null : budgets.find(x => x.category_id === b.category_id && x.month === b.month);
+    // Budgets are recurring — one limit per category, applying to every
+    // month — not re-entered each month. Edits go straight to the existing
+    // row by id. New budgets fall back to updating any pre-existing row for
+    // that category instead of inserting a duplicate (Supabase upsert can't
+    // resolve on category_id alone without an on_conflict target, so we
+    // handle it explicitly here).
+    const existing = b.id ? null : budgets.find(x => x.category_id === b.category_id);
     const targetId = b.id || existing?.id;
     const res = targetId
-      ? await api.patch(`budgets?id=eq.${targetId}`, { category_id:b.category_id, month:b.month, limit_amount:b.limit_amount }, T)
-      : await api.post("budgets", { category_id:b.category_id, month:b.month, limit_amount:b.limit_amount }, T);
-    if (Array.isArray(res) && res[0]) setBuds(p => [...p.filter(x => !(x.category_id === b.category_id && x.month === b.month)), res[0]]);
+      ? await api.patch(`budgets?id=eq.${targetId}`, { category_id:b.category_id, limit_amount:b.limit_amount }, T)
+      : await api.post("budgets", { category_id:b.category_id, limit_amount:b.limit_amount }, T);
+    if (Array.isArray(res) && res[0]) setBuds(p => [...p.filter(x => x.category_id !== b.category_id), res[0]]);
     setModal(null); pop("💰 Budget saved");
   };
 
@@ -845,14 +847,14 @@ export default function App() {
         {modal === "addM" && <ModalMem  onSave={addMem} onClose={() => setModal(null)} />}
         {modal === "eC"   && sel && <ModalCat  cat={sel} onSave={updCat} onDel={delCat} onClose={() => { setModal(null); setSel(null); }} />}
         {modal === "newC" && <ModalCat  cat={{ name:"", icon:"📌", color:PALETTE[0] }} onSave={addCat} onClose={() => setModal(null)} isNew />}
-        {modal === "eB"   && sel && <ModalBud  bud={sel} cats={cats} month={month} onSave={saveBud} onClose={() => { setModal(null); setSel(null); }} />}
+        {modal === "eB"   && sel && <ModalBud  bud={sel} cats={cats} onSave={saveBud} onClose={() => { setModal(null); setSel(null); }} />}
 
         {/* Screen */}
         <div className="scr">
           {loading && <div className="center"><div className="spin" /><span style={{ fontSize:13, color:"var(--mu)" }}>Loading…</span></div>}
-          {!loading && tab === "dashboard" && <ScreenDash rangeExp={rangeExp} rangeTotal={rangeTotal} rangeCatS={rangeCatS} rangeMemS={rangeMemS} catS={catS} cats={cats} members={members} buds={budgets.filter(b => b.month === month)} getCat={getCat} getMem={getMem} dashMode={dashMode} setDashMode={setDashMode} dashDate={dashDate} prevDay={prevDay} nextDay={nextDay} weeksBack={weeksBack} weekStart={weekStart} weekEnd={weekEnd} prevWeek={prevWeek} nextWeek={nextWeek} month={month} prevM={prevM} nextM={nextM} onE={e => { setSel(e); setModal("det"); }} onAll={() => setTab("expenses")} onSettings={openSettings} />}
+          {!loading && tab === "dashboard" && <ScreenDash rangeExp={rangeExp} rangeTotal={rangeTotal} rangeCatS={rangeCatS} rangeMemS={rangeMemS} catS={catS} cats={cats} members={members} buds={budgets} getCat={getCat} getMem={getMem} dashMode={dashMode} setDashMode={setDashMode} dashDate={dashDate} prevDay={prevDay} nextDay={nextDay} weeksBack={weeksBack} weekStart={weekStart} weekEnd={weekEnd} prevWeek={prevWeek} nextWeek={nextWeek} month={month} prevM={prevM} nextM={nextM} onE={e => { setSel(e); setModal("det"); }} onAll={() => setTab("expenses")} onSettings={openSettings} />}
           {!loading && tab === "expenses"  && <ScreenExp  expenses={expenses} cats={cats} getCat={getCat} getMem={getMem} onE={e => { setSel(e); setModal("det"); }} isAdmin={isAdminUser} onBulkDelete={bulkDeleteExp} />}
-          {!loading && tab === "budgets"   && <ScreenBud  buds={budgets.filter(b => b.month === month)} cats={cats} catS={catS} getCat={getCat} month={month} prevM={prevM} nextM={nextM} onEdit={b => { setSel(b); setModal("eB"); }} onAdd={() => { setSel({ category_id: cats[0]?.id, month, limit_amount: 200 }); setModal("eB"); }} />}
+          {!loading && tab === "budgets"   && <ScreenBud  buds={budgets} cats={cats} catS={catS} getCat={getCat} month={month} prevM={prevM} nextM={nextM} onEdit={b => { setSel(b); setModal("eB"); }} onAdd={() => { setSel({ category_id: cats.find(c => !budgets.some(b => b.category_id === c.id))?.id || cats[0]?.id, limit_amount: 200 }); setModal("eB"); }} />}
           {!loading && tab === "admin"     && <ScreenAdm  cats={cats} members={members} expenses={expenses} budgets={budgets} noteHist={noteHist} pendingProfiles={pendingProfiles} onApprove={approveProfile} onDecline={declineProfile} onArchiveMember={archiveMember} getCat={getCat} getMem={getMem} onEC={c => { setSel(c); setModal("eC"); }} onNewCat={() => setModal("newC")} onAM={() => setModal("addM")} onE={e => { setSel(e); setModal("det"); }} onOut={handleOut} user={user} darkMode={darkMode} toggleDark={toggleDark} currency={currency} onCurrency={handleCurrency} fontSize={fontSize} onFontSize={handleFontSize} t={adminTab} setT={setAdminTab} />}
         </div>
 
@@ -1273,15 +1275,14 @@ function ScreenAdm({ cats, members, expenses, budgets, noteHist, pendingProfiles
 
   const repCatS = useMemo(() => { const m = {}; repExp.forEach(e => { m[e.category_id] = (m[e.category_id] || 0) + Number(e.amount); }); return m; }, [repExp]);
 
-  // Budgets are monthly limits — in Week mode this shows how much of the
-  // *month's* budget this single week has already consumed (a pace check).
-  const repBudgetMonth = repMode === "week" ? repWeekStart.slice(0, 7) : repMonth;
+  // Budgets are recurring limits (same every month) — in Week mode this
+  // shows how much of the limit this single week alone has already
+  // consumed (a pace check), not a month-specific budget value.
   const repOverBudget = useMemo(() => budgets
-    .filter(b => b.month === repBudgetMonth)
     .map(b => ({ ...b, cat: getCat(b.category_id), spent: repCatS[b.category_id] || 0 }))
     .filter(b => b.spent / b.limit_amount >= 0.8)
     .sort((a, b) => (b.spent / b.limit_amount) - (a.spent / a.limit_amount))
-  , [budgets, repBudgetMonth, repCatS]);
+  , [budgets, repCatS]);
 
   const repBiggest = repExp.reduce((max, e) => (!max || Number(e.amount) > Number(max.amount)) ? e : max, null);
 
@@ -1776,7 +1777,7 @@ function ModalCat({ cat, onSave, onDel, onClose, isNew }) {
 }
 
 // ─── Modal: Edit Budget ───────────────────────────────────────────────────────
-function ModalBud({ bud, cats, month, onSave, onClose }) {
+function ModalBud({ bud, cats, onSave, onClose }) {
   const [cid, setCid] = useState(bud.category_id || cats[0]?.id);
   const [lim, setLim] = useState(String(bud.limit_amount || ""));
 
@@ -1803,7 +1804,7 @@ function ModalBud({ bud, cats, month, onSave, onClose }) {
             <input className="fi" type="number" inputMode="decimal" placeholder="200.00" value={lim} onChange={e => setLim(e.target.value)} style={{ fontSize:21, fontWeight:700 }} />
           </div>
         </div>
-        <button className="bp" onClick={() => { if (lim) onSave({ ...bud, category_id: cid, month, limit_amount: +lim }); }} disabled={!lim}>Save budget</button>
+        <button className="bp" onClick={() => { if (lim) onSave({ ...bud, category_id: cid, limit_amount: +lim }); }} disabled={!lim}>Save budget</button>
         <div style={{ height:9 }} /><button className="bg" onClick={onClose}>Cancel</button>
       </div>
     </div>
