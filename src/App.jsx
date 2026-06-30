@@ -35,6 +35,27 @@ const MONTHS     = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct",
 // Only this account may create, edit, or delete categories (also enforced via Supabase RLS)
 const ADMIN_EMAIL = "dgnwebs@gmail.com";
 
+// ─── EmailJS — notifies the admin of new sign-up requests ─────────────────────
+// Fill these in after setting up a free account at emailjs.com (see chat for
+// step-by-step instructions). Notification is skipped silently until then.
+const EMAILJS_SERVICE_ID  = "";
+const EMAILJS_TEMPLATE_ID = "";
+const EMAILJS_PUBLIC_KEY  = "";
+
+const notifyAdminSignup = (name, email) => {
+  if (!EMAILJS_SERVICE_ID || !EMAILJS_TEMPLATE_ID || !EMAILJS_PUBLIC_KEY) return;
+  fetch("https://api.emailjs.com/api/v1.0/email/send", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      service_id: EMAILJS_SERVICE_ID,
+      template_id: EMAILJS_TEMPLATE_ID,
+      user_id: EMAILJS_PUBLIC_KEY,
+      template_params: { user_name: name, user_email: email },
+    }),
+  }).catch(() => {}); // best-effort — never block sign-up on this
+};
+
 // { e: emoji, k: searchable keywords }
 const EMOJI_LIB = [
   { e:"🛒", k:"grocery groceries cart shopping" },
@@ -464,6 +485,7 @@ function Login({ onLogin }) {
       if (res.error) { setErr(res.error.message || "Error"); setBusy(false); return; }
       if (res.access_token) {
         await createProfile(res.access_token, res.user.id);
+        notifyAdminSignup(name.trim(), email);
         onLogin(res.access_token, res.user, res.expires_in, res.refresh_token);
         return;
       }
@@ -472,6 +494,7 @@ function Login({ onLogin }) {
       setBusy(false);
       if (res2.access_token) {
         await createProfile(res2.access_token, res2.user.id);
+        notifyAdminSignup(name.trim(), email);
         onLogin(res2.access_token, res2.user, res2.expires_in, res2.refresh_token);
         return;
       }
