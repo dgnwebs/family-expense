@@ -172,22 +172,26 @@ function rankedHistory(noteHistory, categoryId, buf) {
 // deleted, since it's tracked in its own table rather than derived live.
 function noteSuggestions(buf, noteHistory, categoryId) {
   if (!buf) return rankedHistory(noteHistory, categoryId, "").slice(0, 4);
-  if (buf.length < 2) return [];
 
+  // History is a small, category-scoped list, so even a 1-character prefix
+  // is a useful match (e.g. "f" -> "Fuel"). The generic 40-item lexicon below
+  // stays gated at 2+ chars since a single letter would match too much of it.
   const fromCatHistory = rankedHistory(noteHistory, categoryId, buf).slice(0, 3);
   const fromAllHistory = categoryId
     ? rankedHistory(noteHistory, null, buf).filter(t => !fromCatHistory.includes(t)).slice(0, 2)
     : [];
 
   const fromLexicon = [];
-  for (const item of NOTE_LEXICON) {
-    if (matchesBuf(item.name, buf) || buf.includes(item.name)) {
-      const cap = titleCase(item.name);
-      if (item.basket) {
-        fromLexicon.push(`For ${cap}`);
-      } else {
-        (QTY_BY_UNIT[item.unit] || [1]).slice(0, 2).forEach(q => fromLexicon.push(`${q}${item.unit} ${cap}`));
-        fromLexicon.push(`For ${cap}`);
+  if (buf.length >= 2) {
+    for (const item of NOTE_LEXICON) {
+      if (matchesBuf(item.name, buf) || buf.includes(item.name)) {
+        const cap = titleCase(item.name);
+        if (item.basket) {
+          fromLexicon.push(`For ${cap}`);
+        } else {
+          (QTY_BY_UNIT[item.unit] || [1]).slice(0, 2).forEach(q => fromLexicon.push(`${q}${item.unit} ${cap}`));
+          fromLexicon.push(`For ${cap}`);
+        }
       }
     }
   }
@@ -599,6 +603,11 @@ export default function App() {
         : await api.post("note_history", { category_id: categoryId, text: line, count: 1, last_used: todayS() }, T);
       if (Array.isArray(res) && res[0]) {
         setNoteHist(p => existing ? p.map(h => h.id === existing.id ? res[0] : h) : [...p, res[0]]);
+      } else {
+        // Surface the actual Supabase error (e.g. missing table, RLS denial)
+        // instead of failing silently — check the browser console if notes
+        // aren't being remembered.
+        console.error("note_history save failed for", JSON.stringify(line), "response:", res);
       }
     }
   };
@@ -682,7 +691,7 @@ export default function App() {
           {!loading && tab === "dashboard" && <ScreenDash rangeExp={rangeExp} rangeTotal={rangeTotal} rangeCatS={rangeCatS} rangeMemS={rangeMemS} catS={catS} cats={cats} members={members} buds={budgets.filter(b => b.month === month)} getCat={getCat} getMem={getMem} dashMode={dashMode} setDashMode={setDashMode} dashDate={dashDate} prevDay={prevDay} nextDay={nextDay} weeksBack={weeksBack} weekStart={weekStart} weekEnd={weekEnd} prevWeek={prevWeek} nextWeek={nextWeek} month={month} prevM={prevM} nextM={nextM} onE={e => { setSel(e); setModal("det"); }} onAll={() => setTab("expenses")} onRefresh={load} darkMode={darkMode} toggleDark={toggleDark} />}
           {!loading && tab === "expenses"  && <ScreenExp  expenses={expenses} cats={cats} getCat={getCat} getMem={getMem} onE={e => { setSel(e); setModal("det"); }} />}
           {!loading && tab === "budgets"   && <ScreenBud  buds={budgets.filter(b => b.month === month)} cats={cats} catS={catS} getCat={getCat} month={month} prevM={prevM} nextM={nextM} onEdit={b => { setSel(b); setModal("eB"); }} onAdd={() => { setSel({ category_id: cats[0]?.id, month, limit_amount: 200 }); setModal("eB"); }} />}
-          {!loading && tab === "admin"     && <ScreenAdm  cats={cats} members={members} expenses={expenses} budgets={budgets} getCat={getCat} getMem={getMem} onEC={c => { setSel(c); setModal("eC"); }} onNewCat={() => setModal("newC")} onAM={() => setModal("addM")} onE={e => { setSel(e); setModal("det"); }} onOut={handleOut} user={user} darkMode={darkMode} toggleDark={toggleDark} currency={currency} onCurrency={handleCurrency} />}
+          {!loading && tab === "admin"     && <ScreenAdm  cats={cats} members={members} expenses={expenses} budgets={budgets} noteHist={noteHist} getCat={getCat} getMem={getMem} onEC={c => { setSel(c); setModal("eC"); }} onNewCat={() => setModal("newC")} onAM={() => setModal("addM")} onE={e => { setSel(e); setModal("det"); }} onOut={handleOut} user={user} darkMode={darkMode} toggleDark={toggleDark} currency={currency} onCurrency={handleCurrency} />}
         </div>
 
         {/* Bottom Nav */}
@@ -1005,7 +1014,7 @@ function ScreenBud({ buds, cats, catS, getCat, month, prevM, nextM, onEdit, onAd
 }
 
 // ─── Admin Screen ─────────────────────────────────────────────────────────────
-function ScreenAdm({ cats, members, expenses, budgets, getCat, getMem, onEC, onNewCat, onAM, onE, onOut, user, darkMode, toggleDark, currency, onCurrency }) {
+function ScreenAdm({ cats, members, expenses, budgets, noteHist, getCat, getMem, onEC, onNewCat, onAM, onE, onOut, user, darkMode, toggleDark, currency, onCurrency }) {
   const [t, setT] = useState("members");
   const isAdmin = user?.email === ADMIN_EMAIL;
   const mt = members.map(m => ({ ...m, total: expenses.filter(e => e.paid_by === m.id).reduce((s, e) => s + Number(e.amount), 0), cnt: expenses.filter(e => e.paid_by === m.id).length }));
@@ -1232,6 +1241,18 @@ function ScreenAdm({ cats, members, expenses, budgets, getCat, getMem, onEC, onN
                 </div>
               ))}
             </div>
+          </div>
+
+          <div className="card" style={{ margin:0 }}>
+            <div style={{ fontSize:15, fontWeight:700, color:"var(--tx)", marginBottom:8 }}>Note suggestions</div>
+            {noteHist.length === 0
+              ? (
+                <div style={{ fontSize:13, color:"var(--mu)", lineHeight:1.5 }}>
+                  No learned phrases yet. If you've already added expenses with notes and still see this, the <code>note_history</code> table probably hasn't been created — run <strong>note-history.sql</strong> in your Supabase SQL Editor once.
+                </div>
+              )
+              : <div style={{ fontSize:13, color:"var(--mu)" }}>{noteHist.length} learned phrase{noteHist.length === 1 ? "" : "s"} across {new Set(noteHist.map(h => h.category_id)).size} categories</div>
+            }
           </div>
         </div>
       )}
