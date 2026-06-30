@@ -120,7 +120,9 @@ const EMOJI_LIB = [
 ];
 
 // ─── Note autocomplete: common items + typical units, used to suggest clean,
-// consistent note text as the user types (e.g. "milk" → "1l Milk", "For Milk") ─
+// consistent note text as the user types (e.g. "milk" → "1l Milk", "For Milk").
+// "basket" items (vegetables, fruits, snacks…) are composites of many small
+// purchases — quantity suggestions don't make sense there, just "For X" does.
 const QTY_BY_UNIT = {
   kg: [1, 2, 0.5], l: [1, 2], g: [250, 500], ml: [100, 200],
   pcs: [1, 2], dozen: [1], pack: [1, 2],
@@ -131,44 +133,65 @@ const NOTE_LEXICON = [
   { name:"sugar", unit:"kg" }, { name:"salt", unit:"kg" }, { name:"cooking oil", unit:"l" },
   { name:"ghee", unit:"kg" }, { name:"butter", unit:"g" }, { name:"cheese", unit:"g" },
   { name:"paneer", unit:"g" }, { name:"curd", unit:"kg" }, { name:"yogurt", unit:"kg" },
-  { name:"tea", unit:"g" }, { name:"coffee", unit:"g" }, { name:"vegetables", unit:"kg" },
+  { name:"tea", unit:"g" }, { name:"coffee", unit:"g" }, { name:"vegetables", basket:true },
   { name:"onion", unit:"kg" }, { name:"potato", unit:"kg" }, { name:"tomato", unit:"kg" },
-  { name:"fruits", unit:"kg" }, { name:"banana", unit:"dozen" }, { name:"apple", unit:"kg" },
+  { name:"fruits", basket:true }, { name:"banana", unit:"dozen" }, { name:"apple", unit:"kg" },
   { name:"chicken", unit:"kg" }, { name:"mutton", unit:"kg" }, { name:"fish", unit:"kg" },
-  { name:"biscuits", unit:"pack" }, { name:"snacks", unit:"pack" }, { name:"detergent", unit:"kg" },
+  { name:"biscuits", unit:"pack" }, { name:"snacks", basket:true }, { name:"detergent", unit:"kg" },
   { name:"soap", unit:"pcs" }, { name:"shampoo", unit:"ml" }, { name:"toothpaste", unit:"pcs" },
   { name:"tissue", unit:"pack" }, { name:"diapers", unit:"pack" }, { name:"baby formula", unit:"pack" },
   { name:"water", unit:"l" }, { name:"juice", unit:"l" }, { name:"soft drinks", unit:"pack" },
-  { name:"medicine", unit:"pack" }, { name:"petrol", unit:"l" }, { name:"diesel", unit:"l" },
-  { name:"gas cylinder", unit:"pcs" }, { name:"newspaper", unit:"pcs" }, { name:"stationery", unit:"pcs" },
+  { name:"medicine", basket:true }, { name:"petrol", unit:"l" }, { name:"diesel", unit:"l" },
+  { name:"gas cylinder", unit:"pcs" }, { name:"newspaper", unit:"pcs" }, { name:"stationery", basket:true },
 ];
 const titleCase = s => s.replace(/\b\w/g, c => c.toUpperCase());
 
-// Suggestions for the text currently being typed on the last line of a note
-function noteSuggestions(buf, expenses) {
-  if (buf.length < 2) return [];
-
-  // 1. From past notes (your own history — most relevant, learns your phrasing)
+// Frequency-ranked notes from history, optionally scoped to one category
+function rankedHistory(expenses, categoryId, buf) {
   const freq = {};
   expenses.forEach(e => {
+    if (categoryId && e.category_id !== categoryId) return;
     (e.note || "").split("\n").forEach(l => {
       const t = l.trim();
-      if (t && t.toLowerCase().includes(buf)) freq[t] = (freq[t] || 0) + 1;
+      if (!t) return;
+      if (buf && !t.toLowerCase().includes(buf)) return;
+      if (!freq[t]) freq[t] = { count: 0, last: e.date || "" };
+      freq[t].count++;
+      if ((e.date || "") > freq[t].last) freq[t].last = e.date;
     });
   });
-  const fromHistory = Object.entries(freq).sort((a, b) => b[1] - a[1]).map(([t]) => t).slice(0, 3);
+  return Object.entries(freq)
+    .sort((a, b) => b[1].count - a[1].count || b[1].last.localeCompare(a[1].last))
+    .map(([t]) => t);
+}
 
-  // 2. From the built-in grocery/household lexicon, with sensible quantities
+// Suggestions for the text currently being typed on the last line of a note.
+// With nothing typed yet, surfaces this category's most frequently used
+// notes (e.g. picking "Credit Card" shows "SBI Bank", "ICICI Bank"…) — the
+// more it's used, the more these habits get learned and prioritized.
+function noteSuggestions(buf, expenses, categoryId) {
+  if (!buf) return rankedHistory(expenses, categoryId, "").slice(0, 4);
+  if (buf.length < 2) return [];
+
+  const fromCatHistory = rankedHistory(expenses, categoryId, buf).slice(0, 3);
+  const fromAllHistory = categoryId
+    ? rankedHistory(expenses, null, buf).filter(t => !fromCatHistory.includes(t)).slice(0, 2)
+    : [];
+
   const fromLexicon = [];
   for (const item of NOTE_LEXICON) {
     if (item.name.includes(buf) || buf.includes(item.name)) {
       const cap = titleCase(item.name);
-      (QTY_BY_UNIT[item.unit] || [1]).slice(0, 2).forEach(q => fromLexicon.push(`${q}${item.unit} ${cap}`));
-      fromLexicon.push(`For ${cap}`);
+      if (item.basket) {
+        fromLexicon.push(`For ${cap}`);
+      } else {
+        (QTY_BY_UNIT[item.unit] || [1]).slice(0, 2).forEach(q => fromLexicon.push(`${q}${item.unit} ${cap}`));
+        fromLexicon.push(`For ${cap}`);
+      }
     }
   }
 
-  const out = [...fromHistory];
+  const out = [...fromCatHistory, ...fromAllHistory];
   for (const s of fromLexicon) {
     if (out.length >= 6) break;
     if (!out.some(x => x.toLowerCase() === s.toLowerCase())) out.push(s);
@@ -1011,8 +1034,8 @@ function ModalAdd({ cats, members, expenses, onSave, onClose }) {
   const suggestions = useMemo(() => {
     const lines = note.split("\n");
     const buf = lines[lines.length - 1].trim().toLowerCase();
-    return noteSuggestions(buf, expenses);
-  }, [note, expenses]);
+    return noteSuggestions(buf, expenses, cid);
+  }, [note, expenses, cid]);
 
   const pickSuggestion = s => {
     const lines = note.split("\n");
