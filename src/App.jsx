@@ -1329,7 +1329,7 @@ function ModalAdd({ cats, members, noteHist, onSave, onClose }) {
           <div style={{ fontSize:11, color:"var(--mu)", fontWeight:700, marginBottom:4, textTransform:"uppercase", letterSpacing:.5 }}>Amount ({_currCode})</div>
           <div style={{ display:"flex", alignItems:"center", justifyContent:"center" }}>
             <span style={{ fontSize:30, fontWeight:800, color:"var(--mu)" }}>{_currSym}</span>
-            <input style={{ width:170, fontSize:30, fontWeight:800, color:"var(--tx)", border:"none", background:"none", outline:"none", textAlign:"center", fontFamily:"inherit" }} type="number" placeholder="0.00" value={amt} onChange={e => setAmt(e.target.value)} autoFocus />
+            <input style={{ width:170, fontSize:30, fontWeight:800, color:"var(--tx)", border:"none", background:"none", outline:"none", textAlign:"center", fontFamily:"inherit" }} type="number" inputMode="decimal" placeholder="0.00" value={amt} onChange={e => setAmt(e.target.value)} autoFocus />
           </div>
         </div>
 
@@ -1530,7 +1530,7 @@ function ModalBud({ bud, cats, month, onSave, onClose }) {
           <label className="fl">Monthly limit ({_currCode})</label>
           <div style={{ display:"flex", alignItems:"center", gap:8 }}>
             <span style={{ fontSize:22, fontWeight:700, color:"var(--mu)" }}>{_currSym}</span>
-            <input className="fi" type="number" placeholder="200.00" value={lim} onChange={e => setLim(e.target.value)} style={{ fontSize:21, fontWeight:700 }} />
+            <input className="fi" type="number" inputMode="decimal" placeholder="200.00" value={lim} onChange={e => setLim(e.target.value)} style={{ fontSize:21, fontWeight:700 }} />
           </div>
         </div>
         <button className="bp" onClick={() => { if (lim) onSave({ ...bud, category_id: cid, month, limit_amount: +lim }); }} disabled={!lim}>Save budget</button>
