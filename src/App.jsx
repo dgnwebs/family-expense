@@ -420,20 +420,36 @@ const clearSession = () => localStorage.removeItem(SESSION_KEY);
 function Login({ onLogin }) {
   const [email, setEmail] = useState("");
   const [pass,  setPass]  = useState("");
+  const [name,  setName]  = useState("");
   const [isNew, setIsNew] = useState(false);
   const [busy,  setBusy]  = useState(false);
   const [err,   setErr]   = useState("");
 
+  // Creates the pending-approval record. Best-effort — if it fails (e.g. the
+  // table doesn't exist yet), the app's own approval check will retry this
+  // on next login rather than block sign-up entirely.
+  const createProfile = (token, userId) =>
+    api.post("profiles", { id: userId, email, name: name.trim(), status: "pending" }, token).catch(() => {});
+
   const go = async () => {
     setErr(""); setBusy(true);
     if (isNew) {
+      if (!name.trim()) { setErr("Please enter your name"); setBusy(false); return; }
       const res = await signUp(email, pass);
       if (res.error) { setErr(res.error.message || "Error"); setBusy(false); return; }
-      if (res.access_token) { onLogin(res.access_token, res.user, res.expires_in, res.refresh_token); return; }
+      if (res.access_token) {
+        await createProfile(res.access_token, res.user.id);
+        onLogin(res.access_token, res.user, res.expires_in, res.refresh_token);
+        return;
+      }
       // No immediate token — attempt sign-in with same credentials
       const res2 = await signIn(email, pass);
       setBusy(false);
-      if (res2.access_token) { onLogin(res2.access_token, res2.user, res2.expires_in, res2.refresh_token); return; }
+      if (res2.access_token) {
+        await createProfile(res2.access_token, res2.user.id);
+        onLogin(res2.access_token, res2.user, res2.expires_in, res2.refresh_token);
+        return;
+      }
       setErr(res2.error?.message || "Account created — please sign in.");
       setIsNew(false); return;
     }
@@ -454,9 +470,10 @@ function Login({ onLogin }) {
           {isNew ? "Create account" : "Welcome back"}
         </div>
         {err && <div style={{ background:"#FEF2F2", color:"var(--rd)", padding:"11px 13px", borderRadius:8, fontSize:13, marginBottom:12, fontWeight:500 }}>{err}</div>}
+        {isNew && <input className="fi" style={{ marginBottom:10 }} placeholder="Your name" value={name} onChange={e => setName(e.target.value)} />}
         <input className="fi" style={{ marginBottom:10 }} placeholder="Email" type="email" value={email} onChange={e => setEmail(e.target.value)} />
         <input className="fi" style={{ marginBottom:18 }} placeholder="Password" type="password" value={pass} onChange={e => setPass(e.target.value)} onKeyDown={e => e.key === "Enter" && go()} />
-        <button className="bp" onClick={go} disabled={busy || !email || !pass}>
+        <button className="bp" onClick={go} disabled={busy || !email || !pass || (isNew && !name.trim())}>
           {busy ? "Please wait…" : isNew ? "Sign up" : "Sign in"}
         </button>
         <button onClick={() => { setIsNew(v => !v); setErr(""); }}
@@ -465,8 +482,22 @@ function Login({ onLogin }) {
         </button>
       </div>
       <div style={{ fontSize:11, color:"var(--mu)", marginTop:20, textAlign:"center", lineHeight:1.6 }}>
-        All family members sign in here.<br />You share one live Supabase database.
+        All family members sign in here.<br />New sign-ups need the account owner's approval before they can start.
       </div>
+    </div>
+  );
+}
+
+// ─── Awaiting Approval Screen ──────────────────────────────────────────────
+function AwaitingApproval({ name, onOut }) {
+  return (
+    <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", height:"100%", padding:24, textAlign:"center" }}>
+      <div style={{ fontSize:50, marginBottom:14 }}>⏳</div>
+      <div style={{ fontSize:20, fontWeight:800, color:"var(--tx)", marginBottom:8 }}>Awaiting approval</div>
+      <div style={{ fontSize:14, color:"var(--mu)", lineHeight:1.6, marginBottom:24, maxWidth:280 }}>
+        Hi{name ? ` ${name}` : ""}! Your account has been created. The account owner needs to approve you before you can start adding expenses.
+      </div>
+      <button className="bg" onClick={onOut} style={{ maxWidth:240 }}>Sign out</button>
     </div>
   );
 }
@@ -549,28 +580,74 @@ export default function App() {
 
   const pop = msg => { setToast(msg); setTimeout(() => setToast(null), 2400); };
   const T = token;
+  const isAdminUser = user?.email === ADMIN_EMAIL;
+
+  // ── Sign-up approval gate ────────────────────────────────────────────────
+  const [myProfile, setMyProfile] = useState(null);
+  const [checkingApproval, setCheckingApproval] = useState(true);
+  const [pendingProfiles, setPendingProfiles] = useState([]);
+  const isApproved = isAdminUser || myProfile?.status === "approved";
+
+  useEffect(() => {
+    if (!T || !user) return;
+    if (isAdminUser) { setCheckingApproval(false); return; } // admin bypasses approval entirely
+    setCheckingApproval(true);
+    api.get(`profiles?id=eq.${user.id}`, T).then(async res => {
+      let p = Array.isArray(res) ? res[0] : null;
+      if (!p) {
+        // No profile row — e.g. a previously declined request, or the
+        // sign-up insert failed. Recreate a pending one so the admin can see
+        // and act on it again rather than leaving the user stuck silently.
+        const created = await api.post("profiles", { id: user.id, email: user.email, name: user.email.split("@")[0], status: "pending" }, T).catch(() => null);
+        p = Array.isArray(created) ? created[0] : null;
+      }
+      setMyProfile(p);
+      setCheckingApproval(false);
+    }).catch(() => setCheckingApproval(false));
+  }, [T, user, isAdminUser]);
 
   const load = useCallback(async () => {
     if (!T) return;
     setLoad(true);
     try {
-      const [c, m, e, b, nh] = await Promise.all([
+      const calls = [
         api.get("categories?order=name", T),
         api.get("members?order=name", T),
         api.get("expenses?order=date.desc,created_at.desc&limit=300", T),
         api.get("budgets?order=created_at", T),
         api.get("note_history?order=count.desc", T),
-      ]);
+      ];
+      if (isAdminUser) calls.push(api.get("profiles?status=eq.pending&order=created_at", T));
+      const [c, m, e, b, nh, pend] = await Promise.all(calls);
       if (Array.isArray(c)) setCats(c);
       if (Array.isArray(m)) setMems(m);
       if (Array.isArray(e)) setExp(e);
       if (Array.isArray(b)) setBuds(b);
       if (Array.isArray(nh)) setNoteHist(nh);
+      if (isAdminUser && Array.isArray(pend)) setPendingProfiles(pend);
     } catch { pop("⚠️ Error loading data"); }
     setLoad(false);
-  }, [T]);
+  }, [T, isAdminUser]);
 
-  useEffect(() => { if (T) load(); }, [T, load]);
+  useEffect(() => { if (T && isApproved) load(); }, [T, isApproved, load]);
+
+  const approveProfile = async profile => {
+    const ini = profile.name.split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2) || "?";
+    const color = PALETTE[members.length % PALETTE.length];
+    const mRes = await api.post("members", { name: profile.name, color, initials: ini }, T);
+    const newMember = Array.isArray(mRes) && mRes[0];
+    if (newMember) setMems(p => [...p, newMember]);
+    const pRes = await api.patch(`profiles?id=eq.${profile.id}`, { status: "approved", member_id: newMember?.id || null }, T);
+    if (Array.isArray(pRes) && pRes[0]) {
+      setPendingProfiles(p => p.filter(x => x.id !== profile.id));
+      pop(`✅ ${profile.name} approved`);
+    }
+  };
+  const declineProfile = async profile => {
+    await api.del(`profiles?id=eq.${profile.id}`, T);
+    setPendingProfiles(p => p.filter(x => x.id !== profile.id));
+    pop("🗑️ Request declined");
+  };
 
   const mExp  = useMemo(() => expenses.filter(e => e.date?.startsWith(month)), [expenses, month]);
   // catS stays month-scoped — it's what budgets (always monthly limits) compare against,
@@ -704,6 +781,20 @@ export default function App() {
     </>
   );
 
+  if (checkingApproval) return (
+    <>
+      <style>{STYLES}</style>
+      <div className="app" style={appStyle}><div className="center" style={{ height:"100%" }}><div className="spin" /></div></div>
+    </>
+  );
+
+  if (!isApproved) return (
+    <>
+      <style>{STYLES}</style>
+      <div className="app" style={appStyle}><AwaitingApproval name={myProfile?.name} onOut={handleOut} /></div>
+    </>
+  );
+
   return (
     <>
       <style>{STYLES}</style>
@@ -724,7 +815,7 @@ export default function App() {
           {!loading && tab === "dashboard" && <ScreenDash rangeExp={rangeExp} rangeTotal={rangeTotal} rangeCatS={rangeCatS} rangeMemS={rangeMemS} catS={catS} cats={cats} members={members} buds={budgets.filter(b => b.month === month)} getCat={getCat} getMem={getMem} dashMode={dashMode} setDashMode={setDashMode} dashDate={dashDate} prevDay={prevDay} nextDay={nextDay} weeksBack={weeksBack} weekStart={weekStart} weekEnd={weekEnd} prevWeek={prevWeek} nextWeek={nextWeek} month={month} prevM={prevM} nextM={nextM} onE={e => { setSel(e); setModal("det"); }} onAll={() => setTab("expenses")} onRefresh={load} darkMode={darkMode} toggleDark={toggleDark} />}
           {!loading && tab === "expenses"  && <ScreenExp  expenses={expenses} cats={cats} getCat={getCat} getMem={getMem} onE={e => { setSel(e); setModal("det"); }} />}
           {!loading && tab === "budgets"   && <ScreenBud  buds={budgets.filter(b => b.month === month)} cats={cats} catS={catS} getCat={getCat} month={month} prevM={prevM} nextM={nextM} onEdit={b => { setSel(b); setModal("eB"); }} onAdd={() => { setSel({ category_id: cats[0]?.id, month, limit_amount: 200 }); setModal("eB"); }} />}
-          {!loading && tab === "admin"     && <ScreenAdm  cats={cats} members={members} expenses={expenses} budgets={budgets} noteHist={noteHist} getCat={getCat} getMem={getMem} onEC={c => { setSel(c); setModal("eC"); }} onNewCat={() => setModal("newC")} onAM={() => setModal("addM")} onE={e => { setSel(e); setModal("det"); }} onOut={handleOut} user={user} darkMode={darkMode} toggleDark={toggleDark} currency={currency} onCurrency={handleCurrency} fontSize={fontSize} onFontSize={handleFontSize} />}
+          {!loading && tab === "admin"     && <ScreenAdm  cats={cats} members={members} expenses={expenses} budgets={budgets} noteHist={noteHist} pendingProfiles={pendingProfiles} onApprove={approveProfile} onDecline={declineProfile} getCat={getCat} getMem={getMem} onEC={c => { setSel(c); setModal("eC"); }} onNewCat={() => setModal("newC")} onAM={() => setModal("addM")} onE={e => { setSel(e); setModal("det"); }} onOut={handleOut} user={user} darkMode={darkMode} toggleDark={toggleDark} currency={currency} onCurrency={handleCurrency} fontSize={fontSize} onFontSize={handleFontSize} />}
         </div>
 
         {/* Bottom Nav */}
@@ -1051,7 +1142,7 @@ function ScreenBud({ buds, cats, catS, getCat, month, prevM, nextM, onEdit, onAd
 }
 
 // ─── Admin Screen ─────────────────────────────────────────────────────────────
-function ScreenAdm({ cats, members, expenses, budgets, noteHist, getCat, getMem, onEC, onNewCat, onAM, onE, onOut, user, darkMode, toggleDark, currency, onCurrency, fontSize, onFontSize }) {
+function ScreenAdm({ cats, members, expenses, budgets, noteHist, pendingProfiles, onApprove, onDecline, getCat, getMem, onEC, onNewCat, onAM, onE, onOut, user, darkMode, toggleDark, currency, onCurrency, fontSize, onFontSize }) {
   const [t, setT] = useState("members");
   const isAdmin = user?.email === ADMIN_EMAIL;
   const mt = members.map(m => ({ ...m, total: expenses.filter(e => e.paid_by === m.id).reduce((s, e) => s + Number(e.amount), 0), cnt: expenses.filter(e => e.paid_by === m.id).length }));
@@ -1121,6 +1212,23 @@ function ScreenAdm({ cats, members, expenses, budgets, noteHist, getCat, getMem,
 
       {t === "members" && (
         <>
+          {isAdmin && pendingProfiles.length > 0 && (
+            <div style={{ padding:"0 16px", marginBottom:16 }}>
+              <div style={{ fontSize:13, fontWeight:700, color:"var(--am)", marginBottom:10 }}>⏳ Pending approval ({pendingProfiles.length})</div>
+              <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                {pendingProfiles.map(p => (
+                  <div key={p.id} style={{ background:"#FFFBEB", border:"1px solid #FDE68A", borderRadius:12, padding:13 }}>
+                    <div style={{ fontSize:14, fontWeight:700, color:"#1A1A2E" }}>{p.name}</div>
+                    <div style={{ fontSize:12, color:"#78716C", marginBottom:10 }}>{p.email}</div>
+                    <div style={{ display:"flex", gap:8 }}>
+                      <button onClick={() => onApprove(p)} style={{ flex:1, background:"var(--p)", color:"#fff", border:"none", borderRadius:8, padding:"9px 0", fontSize:13, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>✅ Approve</button>
+                      <button onClick={() => onDecline(p)} style={{ flex:1, background:"none", border:"1.5px solid #FDE68A", borderRadius:8, padding:"9px 0", fontSize:13, fontWeight:700, color:"#78716C", cursor:"pointer", fontFamily:"inherit" }}>Decline</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           <div style={{ padding:"0 16px", display:"flex", flexDirection:"column", gap:10, marginBottom:14 }}>
             {mt.length === 0
               ? <div className="center"><span style={{ fontSize:36 }}>👤</span><div style={{ fontSize:15, fontWeight:700, color:"var(--tx)" }}>No members yet</div></div>
