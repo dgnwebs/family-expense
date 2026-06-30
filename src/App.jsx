@@ -470,6 +470,13 @@ function Login({ onLogin }) {
   const [isNew, setIsNew] = useState(false);
   const [busy,  setBusy]  = useState(false);
   const [err,   setErr]   = useState("");
+  const [invalidLogin, setInvalidLogin] = useState(false);
+
+  // Supabase's error shape isn't consistent across endpoints (some use
+  // {error: {message}}, the password-grant token endpoint uses
+  // {error_code, msg} with no top-level "error" at all) — pull whatever
+  // message field is actually present instead of assuming one shape.
+  const errMsg = res => res.error_description || res.msg || res.error?.message || (typeof res.error === "string" ? res.error : null);
 
   // Creates the pending-approval record. Best-effort — if it fails (e.g. the
   // table doesn't exist yet), the app's own approval check will retry this
@@ -478,11 +485,11 @@ function Login({ onLogin }) {
     api.post("profiles", { id: userId, email, name: name.trim(), status: "pending" }, token).catch(() => {});
 
   const go = async () => {
-    setErr(""); setBusy(true);
+    setErr(""); setInvalidLogin(false); setBusy(true);
     if (isNew) {
       if (!name.trim()) { setErr("Please enter your name"); setBusy(false); return; }
       const res = await signUp(email, pass);
-      if (res.error) { setErr(res.error.message || "Error"); setBusy(false); return; }
+      if (!res.access_token && errMsg(res)) { setErr(errMsg(res)); setBusy(false); return; }
       if (res.access_token) {
         await createProfile(res.access_token, res.user.id);
         notifyAdminSignup(name.trim(), email);
@@ -498,13 +505,17 @@ function Login({ onLogin }) {
         onLogin(res2.access_token, res2.user, res2.expires_in, res2.refresh_token);
         return;
       }
-      setErr(res2.error?.message || "Account created — please sign in.");
+      setErr(errMsg(res2) || "Account created — please sign in.");
       setIsNew(false); return;
     }
     const res = await signIn(email, pass);
     setBusy(false);
-    if (res.error) { setErr(res.error.message || "Error"); return; }
-    if (res.access_token) onLogin(res.access_token, res.user, res.expires_in, res.refresh_token);
+    if (!res.access_token) {
+      setInvalidLogin(true);
+      setPass("");
+      return;
+    }
+    onLogin(res.access_token, res.user, res.expires_in, res.refresh_token);
   };
 
   return (
@@ -517,6 +528,11 @@ function Login({ onLogin }) {
         <div style={{ fontSize:17, fontWeight:700, color:"var(--tx)", marginBottom:18 }}>
           {isNew ? "Create account" : "Welcome back"}
         </div>
+        {invalidLogin && (
+          <div style={{ background:"#FEF2F2", color:"var(--rd)", padding:"11px 13px", borderRadius:8, fontSize:13, marginBottom:12, fontWeight:500, lineHeight:1.6 }}>
+            Incorrect details<br /><strong>Sign up if you're logging in for the first time.</strong>
+          </div>
+        )}
         {err && <div style={{ background:"#FEF2F2", color:"var(--rd)", padding:"11px 13px", borderRadius:8, fontSize:13, marginBottom:12, fontWeight:500 }}>{err}</div>}
         {isNew && <input className="fi" style={{ marginBottom:10 }} placeholder="Your name" value={name} onChange={e => setName(e.target.value)} />}
         <input className="fi" style={{ marginBottom:10 }} placeholder="Email" type="email" value={email} onChange={e => setEmail(e.target.value)} />
@@ -524,7 +540,7 @@ function Login({ onLogin }) {
         <button className="bp" onClick={go} disabled={busy || !email || !pass || (isNew && !name.trim())}>
           {busy ? "Please wait…" : isNew ? "Sign up" : "Sign in"}
         </button>
-        <button onClick={() => { setIsNew(v => !v); setErr(""); }}
+        <button onClick={() => { setIsNew(v => !v); setErr(""); setInvalidLogin(false); }}
           style={{ width:"100%", marginTop:10, background:"none", border:"none", color:"var(--p)", fontSize:13, fontWeight:600, cursor:"pointer", padding:"9px 0", fontFamily:"inherit" }}>
           {isNew ? "Already have an account? Sign in" : "No account? Sign up"}
         </button>
