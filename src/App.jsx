@@ -315,6 +315,14 @@ const STYLES = `
   .mnav button { width: 34px; height: 34px; border-radius: 50%; background: var(--card); border: 1.5px solid var(--br); font-size: 17px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-family: inherit; color: var(--tx); }
   .mnav span { flex: 1; text-align: center; font-size: 15px; font-weight: 700; color: var(--tx); }
 
+  /* Date range selector — groups the Today/Week/Month tabs and the prev/next
+     nav row into one visual card instead of two floating rows */
+  .drange { background: var(--card); border-radius: 16px; margin: 0 16px 14px; padding: 14px; display: flex; flex-direction: column; gap: 12px; box-shadow: 0 1px 8px rgba(0,0,0,.06); }
+  .drange .tabs { padding: 0; }
+  .drange .tab { background: var(--bg); }
+  .drange .mnav { padding: 0; }
+  .drange .mnav button { background: var(--bg); }
+
   /* Detail row */
   .dr { display: flex; justify-content: space-between; align-items: center; padding: 13px 0; border-bottom: 1px solid var(--br); }
 
@@ -664,7 +672,7 @@ export default function App() {
           {!loading && tab === "dashboard" && <ScreenDash rangeExp={rangeExp} rangeTotal={rangeTotal} rangeCatS={rangeCatS} rangeMemS={rangeMemS} catS={catS} cats={cats} members={members} buds={budgets.filter(b => b.month === month)} getCat={getCat} getMem={getMem} dashMode={dashMode} setDashMode={setDashMode} dashDate={dashDate} prevDay={prevDay} nextDay={nextDay} weeksBack={weeksBack} weekStart={weekStart} weekEnd={weekEnd} prevWeek={prevWeek} nextWeek={nextWeek} month={month} prevM={prevM} nextM={nextM} onE={e => { setSel(e); setModal("det"); }} onAll={() => setTab("expenses")} onRefresh={load} darkMode={darkMode} toggleDark={toggleDark} />}
           {!loading && tab === "expenses"  && <ScreenExp  expenses={expenses} cats={cats} getCat={getCat} getMem={getMem} onE={e => { setSel(e); setModal("det"); }} />}
           {!loading && tab === "budgets"   && <ScreenBud  buds={budgets.filter(b => b.month === month)} cats={cats} catS={catS} getCat={getCat} month={month} prevM={prevM} nextM={nextM} onEdit={b => { setSel(b); setModal("eB"); }} onAdd={() => { setSel({ category_id: cats[0]?.id, month, limit_amount: 200 }); setModal("eB"); }} />}
-          {!loading && tab === "admin"     && <ScreenAdm  cats={cats} members={members} expenses={expenses} budgets={budgets} getCat={getCat} getMem={getMem} onEC={c => { setSel(c); setModal("eC"); }} onNewCat={() => setModal("newC")} onAM={() => setModal("addM")} onOut={handleOut} user={user} darkMode={darkMode} toggleDark={toggleDark} currency={currency} onCurrency={handleCurrency} />}
+          {!loading && tab === "admin"     && <ScreenAdm  cats={cats} members={members} expenses={expenses} budgets={budgets} getCat={getCat} getMem={getMem} onEC={c => { setSel(c); setModal("eC"); }} onNewCat={() => setModal("newC")} onAM={() => setModal("addM")} onE={e => { setSel(e); setModal("det"); }} onOut={handleOut} user={user} darkMode={darkMode} toggleDark={toggleDark} currency={currency} onCurrency={handleCurrency} />}
         </div>
 
         {/* Bottom Nav */}
@@ -692,13 +700,11 @@ export default function App() {
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 // ─── Shared: Today / Week / Month (+ optional All) range selector ─────────────
-function DateRangeTabs({ mode, setMode, showAll, dateLabel, onPrev, onNext, prevDisabled, nextDisabled }) {
-  const tabs = [
-    ...(showAll ? [{ id:"all", lbl:"All" }] : []),
-    { id:"today", lbl:"Today" }, { id:"week", lbl:"Week" }, { id:"month", lbl:"Month" },
-  ];
+function DateRangeTabs({ mode, setMode, modes = ["today", "week", "month"], showAll, dateLabel, onPrev, onNext, prevDisabled, nextDisabled }) {
+  const labels = { all:"All", today:"Today", week:"Week", month:"Month" };
+  const tabs = [...(showAll ? ["all"] : []), ...modes].map(id => ({ id, lbl: labels[id] }));
   return (
-    <>
+    <div className="drange">
       <div className="tabs">
         {tabs.map(t => (
           <button key={t.id} className={`tab${mode === t.id ? " on" : ""}`} onClick={() => setMode(t.id)}>{t.lbl}</button>
@@ -711,7 +717,7 @@ function DateRangeTabs({ mode, setMode, showAll, dateLabel, onPrev, onNext, prev
           <button onClick={onNext} disabled={nextDisabled} style={nextDisabled ? { opacity:.35, cursor:"default" } : {}}>›</button>
         </div>
       )}
-    </>
+    </div>
   );
 }
 
@@ -989,11 +995,59 @@ function ScreenBud({ buds, cats, catS, getCat, month, prevM, nextM, onEdit, onAd
 }
 
 // ─── Admin Screen ─────────────────────────────────────────────────────────────
-function ScreenAdm({ cats, members, expenses, budgets, getCat, getMem, onEC, onNewCat, onAM, onOut, user, darkMode, toggleDark, currency, onCurrency }) {
+function ScreenAdm({ cats, members, expenses, budgets, getCat, getMem, onEC, onNewCat, onAM, onE, onOut, user, darkMode, toggleDark, currency, onCurrency }) {
   const [t, setT] = useState("members");
   const isAdmin = user?.email === ADMIN_EMAIL;
   const mt = members.map(m => ({ ...m, total: expenses.filter(e => e.paid_by === m.id).reduce((s, e) => s + Number(e.amount), 0), cnt: expenses.filter(e => e.paid_by === m.id).length }));
   const mx = Math.max(...mt.map(m => m.total), 1);
+
+  // ── Reports: Week/Month range + comparisons ────────────────────────────────
+  const [repMode, setRepMode] = useState("month"); // "week" | "month"
+  const [repWeeksBack, setRepWeeksBack] = useState(0);
+  const [repMonth, setRepMonth] = useState(curM());
+
+  const repWeekStart = useMemo(() => startOfWeek(addDays(todayS(), -7 * repWeeksBack)), [repWeeksBack]);
+  const repWeekEnd   = useMemo(() => addDays(repWeekStart, 6), [repWeekStart]);
+  const repPrevWeek   = () => setRepWeeksBack(w => Math.min(w + 1, 4));
+  const repNextWeek   = () => setRepWeeksBack(w => Math.max(w - 1, 0));
+  const repPrevMonth  = () => { const [y,m]=repMonth.split("-").map(Number),d=new Date(y,m-2); setRepMonth(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`); };
+  const repNextMonth  = () => { const [y,m]=repMonth.split("-").map(Number),d=new Date(y,m);   setRepMonth(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`); };
+
+  const repExp = useMemo(() => (
+    repMode === "week"
+      ? expenses.filter(e => e.date >= repWeekStart && e.date <= repWeekEnd)
+      : expenses.filter(e => e.date?.startsWith(repMonth))
+  ), [expenses, repMode, repWeekStart, repWeekEnd, repMonth]);
+
+  // Same-length prior period, for the "vs last week/month" comparison
+  const prevRepExp = useMemo(() => {
+    if (repMode === "week") {
+      const pStart = addDays(repWeekStart, -7), pEnd = addDays(repWeekEnd, -7);
+      return expenses.filter(e => e.date >= pStart && e.date <= pEnd);
+    }
+    const [y, m] = repMonth.split("-").map(Number);
+    const d = new Date(y, m - 2);
+    const pMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    return expenses.filter(e => e.date?.startsWith(pMonth));
+  }, [expenses, repMode, repWeekStart, repWeekEnd, repMonth]);
+
+  const repTotal     = repExp.reduce((s, e) => s + Number(e.amount), 0);
+  const prevRepTotal = prevRepExp.reduce((s, e) => s + Number(e.amount), 0);
+  const repChange    = prevRepTotal > 0 ? Math.round((repTotal - prevRepTotal) / prevRepTotal * 100) : null;
+
+  const repCatS = useMemo(() => { const m = {}; repExp.forEach(e => { m[e.category_id] = (m[e.category_id] || 0) + Number(e.amount); }); return m; }, [repExp]);
+
+  // Budgets are monthly limits — in Week mode this shows how much of the
+  // *month's* budget this single week has already consumed (a pace check).
+  const repBudgetMonth = repMode === "week" ? repWeekStart.slice(0, 7) : repMonth;
+  const repOverBudget = useMemo(() => budgets
+    .filter(b => b.month === repBudgetMonth)
+    .map(b => ({ ...b, cat: getCat(b.category_id), spent: repCatS[b.category_id] || 0 }))
+    .filter(b => b.spent / b.limit_amount >= 0.8)
+    .sort((a, b) => (b.spent / b.limit_amount) - (a.spent / a.limit_amount))
+  , [budgets, repBudgetMonth, repCatS]);
+
+  const repBiggest = repExp.reduce((max, e) => (!max || Number(e.amount) > Number(max.amount)) ? e : max, null);
 
   return (
     <div>
@@ -1051,15 +1105,26 @@ function ScreenAdm({ cats, members, expenses, budgets, getCat, getMem, onEC, onN
       )}
 
       {t === "reports" && (
-        <div style={{ padding:"0 16px" }}>
+        <div>
+          <DateRangeTabs
+            mode={repMode} setMode={setRepMode} modes={["week", "month"]}
+            dateLabel={repMode === "week" ? weekRangeLabel(repWeekStart) : mLabel(repMonth)}
+            onPrev={repMode === "week" ? repPrevWeek : repPrevMonth}
+            onNext={repMode === "week" ? repNextWeek : repNextMonth}
+            prevDisabled={repMode === "week" && repWeeksBack >= 4}
+            nextDisabled={repMode === "week" && repWeeksBack <= 0}
+          />
+
           <div className="card" style={{ marginBottom:12 }}>
-            <div style={{ fontSize:15, fontWeight:700, color:"var(--tx)", marginBottom:14 }}>All-time summary</div>
+            <div style={{ fontSize:15, fontWeight:700, color:"var(--tx)", marginBottom:14 }}>
+              {repMode === "week" ? "This week" : "This month"}
+            </div>
             <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:11 }}>
               {[
-                { icon:"💳", val: fmt(expenses.reduce((s,e) => s + Number(e.amount), 0)), lbl:"Total spent" },
-                { icon:"📊", val: expenses.length, lbl:"Transactions" },
-                { icon:"📅", val: fmt(expenses.reduce((s,e) => s + Number(e.amount), 0) / Math.max(expenses.length,1)), lbl:"Avg/expense" },
-                { icon:"👥", val: members.length, lbl:"Family members" },
+                { icon:"💳", val: fmt(repTotal), lbl:"Total spent" },
+                { icon:"📊", val: repExp.length, lbl:"Transactions" },
+                { icon:"📅", val: fmt(repTotal / Math.max(repExp.length, 1)), lbl:"Avg/expense" },
+                { icon:"🗂️", val: Object.keys(repCatS).length, lbl:"Active categories" },
               ].map((s, i) => (
                 <div key={i} style={{ background:"var(--bg)", borderRadius:10, padding:13 }}>
                   <div style={{ fontSize:22, marginBottom:5 }}>{s.icon}</div>
@@ -1068,13 +1133,49 @@ function ScreenAdm({ cats, members, expenses, budgets, getCat, getMem, onEC, onN
                 </div>
               ))}
             </div>
+            {repChange !== null && (
+              <div style={{ marginTop:13, display:"flex", alignItems:"center", gap:6, fontSize:12, fontWeight:700, color: repChange > 0 ? "var(--rd)" : repChange < 0 ? "var(--g)" : "var(--mu)" }}>
+                <span>{repChange > 0 ? "▲" : repChange < 0 ? "▼" : "–"}</span>
+                <span>{Math.abs(repChange)}% vs last {repMode === "week" ? "week" : "month"}</span>
+              </div>
+            )}
           </div>
+
+          {repOverBudget.length > 0 && (
+            <div className="card" style={{ marginBottom:12 }}>
+              <div style={{ fontSize:15, fontWeight:700, color:"var(--tx)", marginBottom:14 }}>⚠️ Over budget watch</div>
+              {repOverBudget.map(b => {
+                const ov = b.spent > b.limit_amount;
+                return (
+                  <div key={b.id} style={{ marginBottom:13 }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:5 }}>
+                      <span style={{ fontSize:17 }}>{b.cat.icon}</span>
+                      <span style={{ flex:1, fontSize:14, fontWeight:600, color:"var(--tx)" }}>{b.cat.name}</span>
+                      <span style={{ fontSize:13, fontWeight:700, color: ov ? "var(--rd)" : "var(--am)" }}>
+                        {ov ? `Over by ${fmt(b.spent - b.limit_amount)}` : `${fmt(b.limit_amount - b.spent)} left`}
+                      </span>
+                    </div>
+                    <div className="bb"><div className="bf" style={{ width: Math.min(b.spent / b.limit_amount * 100, 100) + "%", background: ov ? "var(--rd)" : "var(--am)" }} /></div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {repBiggest && (
+            <div className="card" style={{ marginBottom:12 }}>
+              <div style={{ fontSize:15, fontWeight:700, color:"var(--tx)", marginBottom:14 }}>Biggest expense</div>
+              <ERow e={repBiggest} cat={getCat(repBiggest.category_id)} mem={getMem(repBiggest.paid_by)} onClick={() => onE(repBiggest)} />
+            </div>
+          )}
+
           <div className="card" style={{ marginBottom:24 }}>
-            <div style={{ fontSize:15, fontWeight:700, color:"var(--tx)", marginBottom:14 }}>Top categories (all time)</div>
-            {(() => {
-              const m = {}; expenses.forEach(e => { m[e.category_id] = (m[e.category_id] || 0) + Number(e.amount); });
-              const tot = expenses.reduce((s, e) => s + Number(e.amount), 0) || 1;
-              return Object.entries(m).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([id, amt]) => {
+            <div style={{ fontSize:15, fontWeight:700, color:"var(--tx)", marginBottom:14 }}>
+              Top categories ({repMode === "week" ? "this week" : "this month"})
+            </div>
+            {Object.keys(repCatS).length === 0
+              ? <div style={{ fontSize:13, color:"var(--mu)" }}>No expenses in this period yet.</div>
+              : Object.entries(repCatS).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([id, amt]) => {
                 const c = getCat(id);
                 return (
                   <div key={id} style={{ marginBottom:13 }}>
@@ -1082,13 +1183,13 @@ function ScreenAdm({ cats, members, expenses, budgets, getCat, getMem, onEC, onN
                       <span style={{ fontSize:17 }}>{c.icon}</span>
                       <span style={{ flex:1, fontSize:14, fontWeight:600, color:"var(--tx)" }}>{c.name}</span>
                       <span style={{ fontSize:13, fontWeight:700, color:"var(--tx)" }}>{fmt(amt)}</span>
-                      <span style={{ fontSize:11, color:"var(--mu)" }}>{Math.round(amt / tot * 100)}%</span>
+                      <span style={{ fontSize:11, color:"var(--mu)" }}>{Math.round(amt / repTotal * 100)}%</span>
                     </div>
-                    <div className="lbb"><div className="lb" style={{ width: (amt / tot * 100) + "%", background: c.color }} /></div>
+                    <div className="lbb"><div className="lb" style={{ width: (amt / repTotal * 100) + "%", background: c.color }} /></div>
                   </div>
                 );
-              });
-            })()}
+              })
+            }
           </div>
         </div>
       )}
