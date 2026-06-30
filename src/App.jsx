@@ -263,11 +263,30 @@ try {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const fmt    = n  => `${_currSym}${Number(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
-const todayS = () => new Date().toISOString().slice(0, 10);
-const curM   = () => new Date().toISOString().slice(0, 7);
+// "Today" is always India Standard Time (Asia/Kolkata), not the device's own
+// timezone — this is a family-only app for an India-based household, so
+// "today" should mean today in India regardless of where a phone's clock is
+// set (or briefly is, while traveling). en-CA formats as YYYY-MM-DD directly.
+const todayS = () => new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+const curM   = () => todayS().slice(0, 7);
 const mLabel = m  => { const [y, mo] = m.split("-"); return `${MONTHS[+mo - 1]} ${y}`; };
-const addDays = (d, n) => { const dt = new Date(d + "T00:00:00"); dt.setDate(dt.getDate() + n); return dt.toISOString().slice(0, 10); };
-const startOfWeek = d => { const dt = new Date(d + "T00:00:00"); const day = dt.getDay(); dt.setDate(dt.getDate() + (day === 0 ? -6 : 1 - day)); return dt.toISOString().slice(0, 10); };
+// Pure calendar-date arithmetic on a YYYY-MM-DD string — parsed and
+// serialized entirely in UTC so there's no local-device-timezone round-trip
+// distortion. (The previous version parsed as local midnight then serialized
+// via toISOString(), which silently shifted dates back a day for any
+// timezone ahead of UTC — IST included — since local midnight there falls
+// on the previous UTC calendar day.)
+const addDays = (d, n) => {
+  const dt = new Date(`${d}T00:00:00Z`);
+  dt.setUTCDate(dt.getUTCDate() + n);
+  return dt.toISOString().slice(0, 10);
+};
+const startOfWeek = d => {
+  const dt = new Date(`${d}T00:00:00Z`);
+  const day = dt.getUTCDay();
+  dt.setUTCDate(dt.getUTCDate() + (day === 0 ? -6 : 1 - day));
+  return dt.toISOString().slice(0, 10);
+};
 const dayLabel = d => {
   if (d === todayS()) return "Today";
   if (d === addDays(todayS(), -1)) return "Yesterday";
