@@ -145,36 +145,28 @@ const NOTE_LEXICON = [
 ];
 const titleCase = s => s.replace(/\b\w/g, c => c.toUpperCase());
 
-// Frequency-ranked notes from history, optionally scoped to one category
-function rankedHistory(expenses, categoryId, buf) {
-  const freq = {};
-  expenses.forEach(e => {
-    if (categoryId && e.category_id !== categoryId) return;
-    (e.note || "").split("\n").forEach(l => {
-      const t = l.trim();
-      if (!t) return;
-      if (buf && !t.toLowerCase().includes(buf)) return;
-      if (!freq[t]) freq[t] = { count: 0, last: e.date || "" };
-      freq[t].count++;
-      if ((e.date || "") > freq[t].last) freq[t].last = e.date;
-    });
-  });
-  return Object.entries(freq)
-    .sort((a, b) => b[1].count - a[1].count || b[1].last.localeCompare(a[1].last))
-    .map(([t]) => t);
+// Frequency-ranked notes from the persistent note_history table (survives
+// expense deletion — see note-history.sql), optionally scoped to one category
+function rankedHistory(noteHistory, categoryId, buf) {
+  return noteHistory
+    .filter(h => (!categoryId || h.category_id === categoryId) && (!buf || h.text.toLowerCase().includes(buf)))
+    .sort((a, b) => b.count - a.count || (b.last_used || "").localeCompare(a.last_used || ""))
+    .map(h => h.text);
 }
 
 // Suggestions for the text currently being typed on the last line of a note.
 // With nothing typed yet, surfaces this category's most frequently used
 // notes (e.g. picking "Credit Card" shows "SBI Bank", "ICICI Bank"…) — the
-// more it's used, the more these habits get learned and prioritized.
-function noteSuggestions(buf, expenses, categoryId) {
-  if (!buf) return rankedHistory(expenses, categoryId, "").slice(0, 4);
+// more it's used, the more these habits get learned and prioritized. This
+// history persists even if the expenses that originally created it get
+// deleted, since it's tracked in its own table rather than derived live.
+function noteSuggestions(buf, noteHistory, categoryId) {
+  if (!buf) return rankedHistory(noteHistory, categoryId, "").slice(0, 4);
   if (buf.length < 2) return [];
 
-  const fromCatHistory = rankedHistory(expenses, categoryId, buf).slice(0, 3);
+  const fromCatHistory = rankedHistory(noteHistory, categoryId, buf).slice(0, 3);
   const fromAllHistory = categoryId
-    ? rankedHistory(expenses, null, buf).filter(t => !fromCatHistory.includes(t)).slice(0, 2)
+    ? rankedHistory(noteHistory, null, buf).filter(t => !fromCatHistory.includes(t)).slice(0, 2)
     : [];
 
   const fromLexicon = [];
@@ -471,6 +463,7 @@ export default function App() {
   const [cats,   setCats]   = useState([]);
   const [members, setMems]  = useState([]);
   const [budgets, setBuds]  = useState([]);
+  const [noteHist, setNoteHist] = useState([]); // persists across expense deletion — see note-history.sql
   const [loading, setLoad]  = useState(false);
 
   // Silent token refresh on mount when access token has expired but session is still within 30 days
@@ -522,16 +515,18 @@ export default function App() {
     if (!T) return;
     setLoad(true);
     try {
-      const [c, m, e, b] = await Promise.all([
+      const [c, m, e, b, nh] = await Promise.all([
         api.get("categories?order=name", T),
         api.get("members?order=name", T),
         api.get("expenses?order=date.desc,created_at.desc&limit=300", T),
         api.get("budgets?order=created_at", T),
+        api.get("note_history?order=count.desc", T),
       ]);
       if (Array.isArray(c)) setCats(c);
       if (Array.isArray(m)) setMems(m);
       if (Array.isArray(e)) setExp(e);
       if (Array.isArray(b)) setBuds(b);
+      if (Array.isArray(nh)) setNoteHist(nh);
     } catch { pop("⚠️ Error loading data"); }
     setLoad(false);
   }, [T]);
@@ -573,9 +568,26 @@ export default function App() {
   const nextWeek = () => setWeeksBack(w => Math.max(w - 1, 0));
 
   // ── CRUD ──────────────────────────────────────────────────────────────────
+  // Records each note line into the persistent note_history table, incrementing
+  // its count if already seen for this category. Kept separate from `expenses`
+  // so suggestions keep working — and keep improving — even after the expense
+  // that originally produced a note gets deleted.
+  const recordNoteHistory = async (categoryId, noteText) => {
+    const lines = [...new Set((noteText || "").split("\n").map(l => l.trim()).filter(Boolean))];
+    for (const line of lines) {
+      const existing = noteHist.find(h => h.category_id === categoryId && h.text.toLowerCase() === line.toLowerCase());
+      const res = existing
+        ? await api.patch(`note_history?id=eq.${existing.id}`, { count: existing.count + 1, last_used: todayS() }, T)
+        : await api.post("note_history", { category_id: categoryId, text: line, count: 1, last_used: todayS() }, T);
+      if (Array.isArray(res) && res[0]) {
+        setNoteHist(p => existing ? p.map(h => h.id === existing.id ? res[0] : h) : [...p, res[0]]);
+      }
+    }
+  };
   const addExp = async exp => {
     const res = await api.post("expenses", exp, T);
     if (Array.isArray(res) && res[0]) setExp(p => [res[0], ...p]);
+    if (exp.note) recordNoteHistory(exp.category_id, exp.note); // fire-and-forget, don't block the save toast
     pop("✅ Expense saved");
   };
   const delExp = async id => {
@@ -639,7 +651,7 @@ export default function App() {
         {toast && <div className="toast">{toast}</div>}
 
         {/* Modals */}
-        {modal === "add"  && <ModalAdd  cats={cats} members={members} expenses={expenses} onSave={async e => { await addExp(e); setModal(null); }} onClose={() => setModal(null)} />}
+        {modal === "add"  && <ModalAdd  cats={cats} members={members} noteHist={noteHist} onSave={async e => { await addExp(e); setModal(null); }} onClose={() => setModal(null)} />}
         {modal === "det"  && sel && <ModalDet  exp={sel} getCat={getCat} getMem={getMem} onDel={delExp} onClose={() => { setModal(null); setSel(null); }} />}
         {modal === "addM" && <ModalMem  onSave={addMem} onClose={() => setModal(null)} />}
         {modal === "eC"   && sel && <ModalCat  cat={sel} onSave={updCat} onDel={delCat} onClose={() => { setModal(null); setSel(null); }} />}
@@ -679,6 +691,30 @@ export default function App() {
 }
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
+// ─── Shared: Today / Week / Month (+ optional All) range selector ─────────────
+function DateRangeTabs({ mode, setMode, showAll, dateLabel, onPrev, onNext, prevDisabled, nextDisabled }) {
+  const tabs = [
+    ...(showAll ? [{ id:"all", lbl:"All" }] : []),
+    { id:"today", lbl:"Today" }, { id:"week", lbl:"Week" }, { id:"month", lbl:"Month" },
+  ];
+  return (
+    <>
+      <div className="tabs">
+        {tabs.map(t => (
+          <button key={t.id} className={`tab${mode === t.id ? " on" : ""}`} onClick={() => setMode(t.id)}>{t.lbl}</button>
+        ))}
+      </div>
+      {mode !== "all" && (
+        <div className="mnav">
+          <button onClick={onPrev} disabled={prevDisabled} style={prevDisabled ? { opacity:.35, cursor:"default" } : {}}>‹</button>
+          <span>{dateLabel}</span>
+          <button onClick={onNext} disabled={nextDisabled} style={nextDisabled ? { opacity:.35, cursor:"default" } : {}}>›</button>
+        </div>
+      )}
+    </>
+  );
+}
+
 function ScreenDash({ rangeExp, rangeTotal, rangeCatS, rangeMemS, catS, cats, members, buds, getCat, getMem, dashMode, setDashMode, dashDate, prevDay, nextDay, weeksBack, weekStart, weekEnd, prevWeek, nextWeek, month, prevM, nextM, onE, onAll, onRefresh, darkMode, toggleDark }) {
   const top  = useMemo(() => Object.entries(rangeCatS).map(([id, a]) => ({ ...getCat(id), amt: a })).sort((a, b) => b.amt - a.amt).slice(0, 5), [rangeCatS]);
   const maxC = top[0]?.amt || 1;
@@ -710,33 +746,14 @@ function ScreenDash({ rangeExp, rangeTotal, rangeCatS, rangeMemS, catS, cats, me
         </div>
       </div>
 
-      <div className="tabs">
-        {[{ id:"today", lbl:"Today" }, { id:"week", lbl:"Week" }, { id:"month", lbl:"Month" }].map(m => (
-          <button key={m.id} className={`tab${dashMode === m.id ? " on" : ""}`} onClick={() => setDashMode(m.id)}>{m.lbl}</button>
-        ))}
-      </div>
-
-      {dashMode === "today" && (
-        <div className="mnav">
-          <button onClick={prevDay}>‹</button>
-          <span>{dayLabel(dashDate)}</span>
-          <button onClick={nextDay} disabled={dashDate >= todayS()} style={dashDate >= todayS() ? { opacity:.35, cursor:"default" } : {}}>›</button>
-        </div>
-      )}
-      {dashMode === "week" && (
-        <div className="mnav">
-          <button onClick={prevWeek} disabled={weeksBack >= 4} style={weeksBack >= 4 ? { opacity:.35, cursor:"default" } : {}}>‹</button>
-          <span>{weekRangeLabel(weekStart)}</span>
-          <button onClick={nextWeek} disabled={weeksBack <= 0} style={weeksBack <= 0 ? { opacity:.35, cursor:"default" } : {}}>›</button>
-        </div>
-      )}
-      {dashMode === "month" && (
-        <div className="mnav">
-          <button onClick={prevM}>‹</button>
-          <span>{mLabel(month)}</span>
-          <button onClick={nextM}>›</button>
-        </div>
-      )}
+      <DateRangeTabs
+        mode={dashMode} setMode={setDashMode}
+        dateLabel={dashMode === "today" ? dayLabel(dashDate) : dashMode === "week" ? weekRangeLabel(weekStart) : mLabel(month)}
+        onPrev={dashMode === "today" ? prevDay : dashMode === "week" ? prevWeek : prevM}
+        onNext={dashMode === "today" ? nextDay : dashMode === "week" ? nextWeek : nextM}
+        prevDisabled={dashMode === "week" && weeksBack >= 4}
+        nextDisabled={(dashMode === "today" && dashDate >= todayS()) || (dashMode === "week" && weeksBack <= 0)}
+      />
 
       {/* Hero */}
       <div className="hero">
@@ -848,13 +865,30 @@ function ScreenDash({ rangeExp, rangeTotal, rangeCatS, rangeMemS, catS, cats, me
 function ScreenExp({ expenses, cats, getCat, getMem, onE }) {
   const [filt, setFilt] = useState("all");
   const [q,    setQ]    = useState("");
+  const [dateMode, setDateMode] = useState("all"); // "all" | "today" | "week" | "month"
+  const [expDate, setExpDate] = useState(todayS());
+  const [expWeeksBack, setExpWeeksBack] = useState(0);
+  const [expMonth, setExpMonth] = useState(curM());
+
+  const weekStart = useMemo(() => startOfWeek(addDays(todayS(), -7 * expWeeksBack)), [expWeeksBack]);
+  const weekEnd   = useMemo(() => addDays(weekStart, 6), [weekStart]);
+
+  const prevDay   = () => setExpDate(d => addDays(d, -1));
+  const nextDay   = () => setExpDate(d => { const n = addDays(d, 1); return n > todayS() ? d : n; });
+  const prevWeek  = () => setExpWeeksBack(w => Math.min(w + 1, 4));
+  const nextWeek  = () => setExpWeeksBack(w => Math.max(w - 1, 0));
+  const prevMonth = () => { const [y,m]=expMonth.split("-").map(Number),d=new Date(y,m-2); setExpMonth(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`); };
+  const nextMonth = () => { const [y,m]=expMonth.split("-").map(Number),d=new Date(y,m);   setExpMonth(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`); };
 
   const list = useMemo(() => {
     let r = [...expenses];
+    if (dateMode === "today")      r = r.filter(e => e.date === expDate);
+    else if (dateMode === "week")  r = r.filter(e => e.date >= weekStart && e.date <= weekEnd);
+    else if (dateMode === "month") r = r.filter(e => e.date?.startsWith(expMonth));
     if (filt !== "all") r = r.filter(e => e.category_id === filt);
     if (q) r = r.filter(e => (e.note || "").toLowerCase().includes(q.toLowerCase()));
     return r;
-  }, [expenses, filt, q]);
+  }, [expenses, dateMode, expDate, weekStart, weekEnd, expMonth, filt, q]);
 
   const grp = useMemo(() => {
     const g = {};
@@ -866,10 +900,20 @@ function ScreenExp({ expenses, cats, getCat, getMem, onE }) {
 
   return (
     <div>
-      <div className="hd"><h1>Expenses</h1><p>{expenses.length} total</p></div>
+      <div className="hd"><h1>Expenses</h1><p>{list.length} of {expenses.length} total</p></div>
       <div style={{ padding:"0 16px 11px" }}>
         <input className="fi" placeholder="🔍  Search…" value={q} onChange={e => setQ(e.target.value)} />
       </div>
+
+      <DateRangeTabs
+        mode={dateMode} setMode={setDateMode} showAll
+        dateLabel={dateMode === "today" ? dayLabel(expDate) : dateMode === "week" ? weekRangeLabel(weekStart) : mLabel(expMonth)}
+        onPrev={dateMode === "today" ? prevDay : dateMode === "week" ? prevWeek : prevMonth}
+        onNext={dateMode === "today" ? nextDay : dateMode === "week" ? nextWeek : nextMonth}
+        prevDisabled={dateMode === "week" && expWeeksBack >= 4}
+        nextDisabled={(dateMode === "today" && expDate >= todayS()) || (dateMode === "week" && expWeeksBack <= 0)}
+      />
+
       <div className="tabs">
         <button className="chip" style={filt === "all" ? { background:"var(--p)", color:"#fff", borderColor:"var(--p)" } : {}} onClick={() => setFilt("all")}>All</button>
         {cats.map(c => (
@@ -1105,7 +1149,7 @@ function ERow({ e, cat, mem, onClick }) {
 }
 
 // ─── Modal: Add Expense ───────────────────────────────────────────────────────
-function ModalAdd({ cats, members, expenses, onSave, onClose }) {
+function ModalAdd({ cats, members, noteHist, onSave, onClose }) {
   const [amt,  setAmt]  = useState("");
   const [note, setNote] = useState("");
   const [date, setDate] = useState(todayS());
@@ -1118,8 +1162,8 @@ function ModalAdd({ cats, members, expenses, onSave, onClose }) {
   const suggestions = useMemo(() => {
     const lines = note.split("\n");
     const buf = lines[lines.length - 1].trim().toLowerCase();
-    return noteSuggestions(buf, expenses, cid);
-  }, [note, expenses, cid]);
+    return noteSuggestions(buf, noteHist, cid);
+  }, [note, noteHist, cid]);
 
   const pickSuggestion = s => {
     const lines = note.split("\n");
