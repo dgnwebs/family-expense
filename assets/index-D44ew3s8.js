@@ -29,8 +29,9 @@ Error generating stack: `+e.message+`
 
   /* Nav */
   nav { display: flex; background: var(--card); border-top: 1px solid var(--br); padding: 8px 0 20px; flex-shrink: 0; }
-  .ni { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 8px 4px 6px; border: none; border-top: 2.5px solid transparent; background: none; color: var(--mu); font-size: 10px; font-weight: 600; cursor: pointer; font-family: inherit; }
-  .ni.on { color: var(--p); border-top-color: var(--p); }
+  .ni { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 8px 4px 6px; border: none; background: none; color: var(--mu); font-size: 10px; font-weight: 600; cursor: pointer; font-family: inherit; position: relative; }
+  .ni.on { color: var(--p); }
+  .ni.on::before { content: ""; position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 26px; height: 2.5px; border-radius: 2px; background: var(--p); }
   .ni svg { width: 22px; height: 22px; margin-bottom: 1px; }
   .nadd { flex: 1; display: flex; align-items: center; justify-content: center; }
   .addbtn { width: 54px; height: 54px; border-radius: 50%; background: var(--p); border: none; cursor: pointer; color: #fff; font-size: 28px; box-shadow: 0 4px 16px rgba(30,58,138,.4); margin-top: -18px; display: flex; align-items: center; justify-content: center; }
