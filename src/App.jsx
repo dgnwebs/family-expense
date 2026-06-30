@@ -272,7 +272,7 @@ const STYLES = `
   :root[data-theme="dark"] select { color-scheme: dark; }
   html, body, #root { height: 100%; background: var(--bg); }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; overflow: hidden; }
-  #root { display: flex; justify-content: center; }
+  #root { display: flex; justify-content: center; align-items: center; }
   .app { display: flex; flex-direction: column; height: 100vh; width: 100%; max-width: 430px; position: relative; background: var(--bg); overflow: hidden; }
   .scr { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
   .scr::-webkit-scrollbar { display: none; }
@@ -325,7 +325,7 @@ const STYLES = `
   .tab.on { background: var(--p); color: #fff; }
 
   /* Category grid */
-  .cg { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .cg { display: grid; grid-template-columns: repeat(auto-fit, minmax(78px, 1fr)); gap: 10px; }
   .ci { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 14px 6px; border-radius: 12px; border: 2px solid var(--br); cursor: pointer; background: var(--card); transition: all .15s; }
   .ci.on { border-color: var(--p); background: var(--ps); }
 
@@ -674,18 +674,20 @@ export default function App() {
   };
 
   // ── Render ────────────────────────────────────────────────────────────────
-  // `zoom` inflates an element's effective layout size by the scale factor,
-  // so a zoomed-up .app would render wider/taller than the actual phone
-  // viewport and get clipped (no horizontal scroll, just cut-off content) by
-  // the body's overflow:hidden. Dividing width/height by the same factor
-  // cancels that out, so the final rendered box always matches the true
-  // viewport exactly regardless of scale — text/buttons get bigger, the
-  // screen boundary never moves.
+  // Scaling via `transform` rather than the non-standard `zoom` property —
+  // zoom's interaction with vw/vh units on the element it's applied to is
+  // unspecified and behaved inconsistently in practice (content overflowing
+  // the screen edge at larger sizes). transform is a standard, predictable
+  // paint-time operation that never affects how any element computes its own
+  // box size, so there's no ambiguity: pre-shrink .app by the scale factor,
+  // then transform: scale() it back up. #root centers it on both axes, and
+  // since transform scales from the element's own center by default, the
+  // final rendered box lands exactly on the true viewport edges every time.
   const appStyle = {
-    zoom: fontScale,
     width: `calc(100vw / ${fontScale})`,
     maxWidth: `calc(430px / ${fontScale})`,
     height: `calc(100vh / ${fontScale})`,
+    transform: `scale(${fontScale})`,
   };
 
   if (booting) return (
@@ -1369,7 +1371,7 @@ function ModalAdd({ cats, members, noteHist, onSave, onClose }) {
           <div style={{ fontSize:11, color:"var(--mu)", fontWeight:700, marginBottom:4, textTransform:"uppercase", letterSpacing:.5 }}>Amount ({_currCode})</div>
           <div style={{ display:"flex", alignItems:"center", justifyContent:"center" }}>
             <span style={{ fontSize:30, fontWeight:800, color:"var(--mu)" }}>{_currSym}</span>
-            <input style={{ width:170, fontSize:30, fontWeight:800, color:"var(--tx)", border:"none", background:"none", outline:"none", textAlign:"center", fontFamily:"inherit" }} type="number" inputMode="decimal" placeholder="0.00" value={amt} onChange={e => setAmt(e.target.value)} autoFocus />
+            <input style={{ width:"100%", maxWidth:170, minWidth:0, fontSize:30, fontWeight:800, color:"var(--tx)", border:"none", background:"none", outline:"none", textAlign:"center", fontFamily:"inherit" }} type="number" inputMode="decimal" placeholder="0.00" value={amt} onChange={e => setAmt(e.target.value)} autoFocus />
           </div>
         </div>
 
