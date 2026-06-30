@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 
 // ─── Supabase config ──────────────────────────────────────────────────────────
 const SUPA_URL = "https://draniousnxunkgqdxxvw.supabase.co";
@@ -308,7 +308,7 @@ const STYLES = `
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; overflow: hidden; }
   #root { display: flex; justify-content: center; align-items: center; }
   .app { display: flex; flex-direction: column; height: 100vh; width: 100%; max-width: 430px; position: relative; background: var(--bg); overflow: hidden; }
-  .scr { flex: 1; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; }
+  .scr { flex: 1; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; overscroll-behavior-y: contain; }
   .scr::-webkit-scrollbar { display: none; }
 
   /* Nav */
@@ -697,6 +697,37 @@ export default function App() {
 
   useEffect(() => { if (T && isApproved) load(); }, [T, isApproved, load]);
 
+  // ── Pull-to-refresh ─────────────────────────────────────────────────────
+  // PWAs running in standalone mode don't get the browser's native
+  // pull-to-refresh, so this re-implements it: pulling down while already
+  // scrolled to the top re-fetches all data.
+  const PULL_THRESHOLD = 70;
+  const PULL_MAX = 110;
+  const scrRef = useRef(null);
+  const touchStartY = useRef(null);
+  const [pullY, setPullY] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const onTouchStart = e => {
+    touchStartY.current = scrRef.current && scrRef.current.scrollTop <= 0 ? e.touches[0].clientY : null;
+  };
+  const onTouchMove = e => {
+    if (touchStartY.current === null || refreshing) return;
+    const dy = e.touches[0].clientY - touchStartY.current;
+    if (dy > 0 && scrRef.current.scrollTop <= 0) setPullY(Math.min(dy * 0.5, PULL_MAX));
+    else { touchStartY.current = null; setPullY(0); }
+  };
+  const onTouchEnd = async () => {
+    if (touchStartY.current === null) return;
+    touchStartY.current = null;
+    if (pullY >= PULL_THRESHOLD) {
+      setRefreshing(true);
+      await load();
+      setRefreshing(false);
+    }
+    setPullY(0);
+  };
+
   const approveProfile = async profile => {
     const ini = profile.name.split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2) || "?";
     const color = PALETTE[members.length % PALETTE.length];
@@ -888,8 +919,16 @@ export default function App() {
         {modal === "newC" && <ModalCat  cat={{ name:"", icon:"📌", color:PALETTE[0] }} onSave={addCat} onClose={() => setModal(null)} isNew />}
         {modal === "eB"   && sel && <ModalBud  bud={sel} cats={cats} onSave={saveBud} onClose={() => { setModal(null); setSel(null); }} />}
 
+        {/* Pull-to-refresh indicator */}
+        {(pullY > 12 || refreshing) && (
+          <div style={{ position:"absolute", top: Math.min(pullY, PULL_MAX) - 46, left:0, right:0, display:"flex", justifyContent:"center", zIndex:50, pointerEvents:"none", opacity: refreshing ? 1 : Math.min(pullY / PULL_THRESHOLD, 1) }}>
+            <div className="spin" style={{ width:26, height:26 }} />
+          </div>
+        )}
+
         {/* Screen */}
-        <div className="scr">
+        <div className="scr" ref={scrRef} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}
+          style={{ transform: pullY ? `translateY(${pullY}px)` : undefined, transition: pullY ? "none" : "transform .25s" }}>
           {loading && <div className="center"><div className="spin" /><span style={{ fontSize:13, color:"var(--mu)" }}>Loading…</span></div>}
           {!loading && tab === "dashboard" && <ScreenDash rangeExp={rangeExp} rangeTotal={rangeTotal} rangeCatS={rangeCatS} rangeMemS={rangeMemS} catS={catS} cats={cats} members={members} buds={budgets} getCat={getCat} getMem={getMem} dashMode={dashMode} setDashMode={setDashMode} dashDate={dashDate} prevDay={prevDay} nextDay={nextDay} weeksBack={weeksBack} weekStart={weekStart} weekEnd={weekEnd} prevWeek={prevWeek} nextWeek={nextWeek} month={month} prevM={prevM} nextM={nextM} onE={e => { setSel(e); setModal("det"); }} onAll={() => setTab("expenses")} onSettings={openSettings} />}
           {!loading && tab === "expenses"  && <ScreenExp  expenses={expenses} cats={cats} getCat={getCat} getMem={getMem} onE={e => { setSel(e); setModal("det"); }} isAdmin={isAdminUser} onBulkDelete={bulkDeleteExp} />}
