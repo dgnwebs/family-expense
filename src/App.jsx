@@ -486,7 +486,7 @@ function Login({ onLogin }) {
 
   return (
     <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", height:"100%", padding:24 }}>
-      <div style={{ fontSize:60, marginBottom:10 }}>💰</div>
+      <img src={`${import.meta.env.BASE_URL}icon-512.png`} alt="" style={{ width:88, height:88, borderRadius:22, marginBottom:14, boxShadow:"0 6px 20px rgba(30,58,138,.3)" }} />
       <div style={{ fontSize:26, fontWeight:800, color:"var(--tx)", marginBottom:4 }}>Family Expenses</div>
       <div style={{ fontSize:13, color:"var(--mu)", marginBottom:32 }}>Track spending together · {_currCode}</div>
 
