@@ -716,10 +716,21 @@ export default function App() {
     setExp(p => p.filter(e => e.id !== id));
     setModal(null); setSel(null); pop("🗑️ Deleted");
   };
+  const bulkDeleteExp = async ids => {
+    if (ids.length === 0) return;
+    await api.del(`expenses?id=in.(${ids.join(",")})`, T);
+    setExp(p => p.filter(e => !ids.includes(e.id)));
+    pop(`🗑️ ${ids.length} expense${ids.length === 1 ? "" : "s"} deleted`);
+  };
   const addMem = async m => {
     const res = await api.post("members", m, T);
     if (Array.isArray(res) && res[0]) setMems(p => [...p, res[0]]);
     setModal(null); pop("👤 Member added");
+  };
+  const archiveMember = async id => {
+    const res = await api.patch(`members?id=eq.${id}`, { archived: true }, T);
+    if (Array.isArray(res) && res[0]) setMems(p => p.map(m => m.id === id ? res[0] : m));
+    pop("👤 Member removed");
   };
   const updCat = async c => {
     await api.patch(`categories?id=eq.${c.id}`, { name:c.name, icon:c.icon, color:c.color }, T);
@@ -802,8 +813,8 @@ export default function App() {
         {toast && <div className="toast">{toast}</div>}
 
         {/* Modals */}
-        {modal === "add"  && <ModalAdd  cats={cats} members={members} noteHist={noteHist} onSave={async e => { await addExp(e); setModal(null); }} onClose={() => setModal(null)} />}
-        {modal === "det"  && sel && <ModalDet  exp={sel} getCat={getCat} getMem={getMem} onDel={delExp} onClose={() => { setModal(null); setSel(null); }} />}
+        {modal === "add"  && <ModalAdd  cats={cats} members={members.filter(m => !m.archived)} noteHist={noteHist} onSave={async e => { await addExp(e); setModal(null); }} onClose={() => setModal(null)} />}
+        {modal === "det"  && sel && <ModalDet  exp={sel} getCat={getCat} getMem={getMem} onDel={delExp} onClose={() => { setModal(null); setSel(null); }} user={user} isAdmin={isAdminUser} />}
         {modal === "addM" && <ModalMem  onSave={addMem} onClose={() => setModal(null)} />}
         {modal === "eC"   && sel && <ModalCat  cat={sel} onSave={updCat} onDel={delCat} onClose={() => { setModal(null); setSel(null); }} />}
         {modal === "newC" && <ModalCat  cat={{ name:"", icon:"📌", color:PALETTE[0] }} onSave={addCat} onClose={() => setModal(null)} isNew />}
@@ -813,9 +824,9 @@ export default function App() {
         <div className="scr">
           {loading && <div className="center"><div className="spin" /><span style={{ fontSize:13, color:"var(--mu)" }}>Loading…</span></div>}
           {!loading && tab === "dashboard" && <ScreenDash rangeExp={rangeExp} rangeTotal={rangeTotal} rangeCatS={rangeCatS} rangeMemS={rangeMemS} catS={catS} cats={cats} members={members} buds={budgets.filter(b => b.month === month)} getCat={getCat} getMem={getMem} dashMode={dashMode} setDashMode={setDashMode} dashDate={dashDate} prevDay={prevDay} nextDay={nextDay} weeksBack={weeksBack} weekStart={weekStart} weekEnd={weekEnd} prevWeek={prevWeek} nextWeek={nextWeek} month={month} prevM={prevM} nextM={nextM} onE={e => { setSel(e); setModal("det"); }} onAll={() => setTab("expenses")} onRefresh={load} darkMode={darkMode} toggleDark={toggleDark} />}
-          {!loading && tab === "expenses"  && <ScreenExp  expenses={expenses} cats={cats} getCat={getCat} getMem={getMem} onE={e => { setSel(e); setModal("det"); }} />}
+          {!loading && tab === "expenses"  && <ScreenExp  expenses={expenses} cats={cats} getCat={getCat} getMem={getMem} onE={e => { setSel(e); setModal("det"); }} isAdmin={isAdminUser} onBulkDelete={bulkDeleteExp} />}
           {!loading && tab === "budgets"   && <ScreenBud  buds={budgets.filter(b => b.month === month)} cats={cats} catS={catS} getCat={getCat} month={month} prevM={prevM} nextM={nextM} onEdit={b => { setSel(b); setModal("eB"); }} onAdd={() => { setSel({ category_id: cats[0]?.id, month, limit_amount: 200 }); setModal("eB"); }} />}
-          {!loading && tab === "admin"     && <ScreenAdm  cats={cats} members={members} expenses={expenses} budgets={budgets} noteHist={noteHist} pendingProfiles={pendingProfiles} onApprove={approveProfile} onDecline={declineProfile} getCat={getCat} getMem={getMem} onEC={c => { setSel(c); setModal("eC"); }} onNewCat={() => setModal("newC")} onAM={() => setModal("addM")} onE={e => { setSel(e); setModal("det"); }} onOut={handleOut} user={user} darkMode={darkMode} toggleDark={toggleDark} currency={currency} onCurrency={handleCurrency} fontSize={fontSize} onFontSize={handleFontSize} />}
+          {!loading && tab === "admin"     && <ScreenAdm  cats={cats} members={members} expenses={expenses} budgets={budgets} noteHist={noteHist} pendingProfiles={pendingProfiles} onApprove={approveProfile} onDecline={declineProfile} onArchiveMember={archiveMember} getCat={getCat} getMem={getMem} onEC={c => { setSel(c); setModal("eC"); }} onNewCat={() => setModal("newC")} onAM={() => setModal("addM")} onE={e => { setSel(e); setModal("det"); }} onOut={handleOut} user={user} darkMode={darkMode} toggleDark={toggleDark} currency={currency} onCurrency={handleCurrency} fontSize={fontSize} onFontSize={handleFontSize} />}
         </div>
 
         {/* Bottom Nav */}
@@ -1015,13 +1026,15 @@ function ScreenDash({ rangeExp, rangeTotal, rangeCatS, rangeMemS, catS, cats, me
 }
 
 // ─── Expenses Screen ──────────────────────────────────────────────────────────
-function ScreenExp({ expenses, cats, getCat, getMem, onE }) {
+function ScreenExp({ expenses, cats, getCat, getMem, onE, isAdmin, onBulkDelete }) {
   const [filt, setFilt] = useState("all");
   const [q,    setQ]    = useState("");
   const [dateMode, setDateMode] = useState("all"); // "all" | "today" | "week" | "month"
   const [expDate, setExpDate] = useState(todayS());
   const [expWeeksBack, setExpWeeksBack] = useState(0);
   const [expMonth, setExpMonth] = useState(curM());
+  const [selectMode, setSelectMode] = useState(false);
+  const [selected, setSelected]     = useState(() => new Set());
 
   const weekStart = useMemo(() => startOfWeek(addDays(todayS(), -7 * expWeeksBack)), [expWeeksBack]);
   const weekEnd   = useMemo(() => addDays(weekStart, 6), [weekStart]);
@@ -1051,9 +1064,22 @@ function ScreenExp({ expenses, cats, getCat, getMem, onE }) {
 
   const fd = d => new Date(d + "T00:00:00").toLocaleDateString("en-CA", { weekday:"short", month:"short", day:"numeric" });
 
+  const toggleSelect = id => setSelected(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const exitSelect = () => { setSelectMode(false); setSelected(new Set()); };
+  const confirmBulkDelete = () => { onBulkDelete([...selected]); exitSelect(); };
+
   return (
     <div>
-      <div className="hd"><h1>Expenses</h1><p>{list.length} of {expenses.length} total</p></div>
+      <div className="hd">
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+          <div><h1>Expenses</h1><p>{list.length} of {expenses.length} total</p></div>
+          {isAdmin && (
+            <button onClick={() => selectMode ? exitSelect() : setSelectMode(true)} className="theme-btn">
+              {selectMode ? "Cancel" : "Select"}
+            </button>
+          )}
+        </div>
+      </div>
       <div style={{ padding:"0 16px 11px" }}>
         <input className="fi" placeholder="🔍  Search…" value={q} onChange={e => setQ(e.target.value)} />
       </div>
@@ -1082,12 +1108,23 @@ function ScreenExp({ expenses, cats, getCat, getMem, onE }) {
               <div style={{ fontSize:12, fontWeight:700, color:"var(--tx)" }}>{fmt(items.reduce((s, e) => s + Number(e.amount), 0))}</div>
             </div>
             <div style={{ padding:"0 16px", display:"flex", flexDirection:"column", gap:7, marginBottom:6 }}>
-              {items.map(e => <ERow key={e.id} e={e} cat={getCat(e.category_id)} mem={getMem(e.paid_by)} onClick={() => onE(e)} />)}
+              {items.map(e => <ERow key={e.id} e={e} cat={getCat(e.category_id)} mem={getMem(e.paid_by)} onClick={() => selectMode ? toggleSelect(e.id) : onE(e)} selectMode={selectMode} selected={selected.has(e.id)} />)}
             </div>
           </div>
         ))
       }
-      <div style={{ height:24 }} />
+      <div style={{ height: selectMode && selected.size > 0 ? 90 : 24 }} />
+
+      {selectMode && selected.size > 0 && (
+        // position:fixed here binds to .app (it has `transform` set, which per spec
+        // establishes a containing block for fixed descendants too) rather than the
+        // true viewport — same effect as .toast — so it sits above the nav bar and
+        // doesn't scroll away with .scr's content.
+        <div style={{ position:"fixed", left:16, right:16, bottom:88, background:"var(--p)", borderRadius:14, padding:"13px 16px", display:"flex", justifyContent:"space-between", alignItems:"center", boxShadow:"0 4px 16px rgba(0,0,0,.25)", zIndex:150 }}>
+          <span style={{ color:"#fff", fontSize:14, fontWeight:700 }}>{selected.size} selected</span>
+          <button onClick={confirmBulkDelete} style={{ background:"#fff", color:"var(--rd)", border:"none", borderRadius:8, padding:"9px 16px", fontSize:13, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>🗑️ Delete</button>
+        </div>
+      )}
     </div>
   );
 }
@@ -1142,10 +1179,10 @@ function ScreenBud({ buds, cats, catS, getCat, month, prevM, nextM, onEdit, onAd
 }
 
 // ─── Admin Screen ─────────────────────────────────────────────────────────────
-function ScreenAdm({ cats, members, expenses, budgets, noteHist, pendingProfiles, onApprove, onDecline, getCat, getMem, onEC, onNewCat, onAM, onE, onOut, user, darkMode, toggleDark, currency, onCurrency, fontSize, onFontSize }) {
+function ScreenAdm({ cats, members, expenses, budgets, noteHist, pendingProfiles, onApprove, onDecline, onArchiveMember, getCat, getMem, onEC, onNewCat, onAM, onE, onOut, user, darkMode, toggleDark, currency, onCurrency, fontSize, onFontSize }) {
   const [t, setT] = useState("members");
   const isAdmin = user?.email === ADMIN_EMAIL;
-  const mt = members.map(m => ({ ...m, total: expenses.filter(e => e.paid_by === m.id).reduce((s, e) => s + Number(e.amount), 0), cnt: expenses.filter(e => e.paid_by === m.id).length }));
+  const mt = members.filter(m => !m.archived).map(m => ({ ...m, total: expenses.filter(e => e.paid_by === m.id).reduce((s, e) => s + Number(e.amount), 0), cnt: expenses.filter(e => e.paid_by === m.id).length }));
   const mx = Math.max(...mt.map(m => m.total), 1);
 
   // ── Reports: Week/Month range + comparisons ────────────────────────────────
@@ -1240,6 +1277,11 @@ function ScreenAdm({ cats, members, expenses, budgets, noteHist, pendingProfiles
                     <div style={{ fontSize:19, fontWeight:800, color:"var(--tx)" }}>{fmt(m.total)}</div>
                   </div>
                   <div className="bb"><div className="bf" style={{ width: (m.total / mx * 100) + "%", background: m.color }} /></div>
+                  {isAdmin && (
+                    <button onClick={() => onArchiveMember(m.id)} style={{ width:"100%", marginTop:12, background:"none", border:"1.5px solid var(--br)", borderRadius:8, padding:"8px 0", fontSize:12, fontWeight:600, color:"var(--mu)", cursor:"pointer", fontFamily:"inherit" }}>
+                      Remove member
+                    </button>
+                  )}
                 </div>
               ))
             }
@@ -1419,9 +1461,14 @@ function ScreenAdm({ cats, members, expenses, budgets, noteHist, pendingProfiles
 }
 
 // ─── Shared: Expense Row ──────────────────────────────────────────────────────
-function ERow({ e, cat, mem, onClick }) {
+function ERow({ e, cat, mem, onClick, selectMode, selected }) {
   return (
     <div className="er" onClick={onClick}>
+      {selectMode && (
+        <div style={{ width:22, height:22, borderRadius:6, border: selected ? "none" : "2px solid var(--br)", background: selected ? "var(--p)" : "transparent", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, color:"#fff", fontSize:13, fontWeight:800 }}>
+          {selected && "✓"}
+        </div>
+      )}
       <div className="eic" style={{ background: cat.color + "22" }}>{cat.icon}</div>
       <div style={{ flex:1, minWidth:0 }}>
         <div style={{ fontSize:15, fontWeight:600, color:"var(--tx)", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{e.note || cat.name}</div>
@@ -1540,9 +1587,12 @@ function ModalAdd({ cats, members, noteHist, onSave, onClose }) {
 }
 
 // ─── Modal: Expense Detail ────────────────────────────────────────────────────
-function ModalDet({ exp, getCat, getMem, onDel, onClose }) {
+function ModalDet({ exp, getCat, getMem, onDel, onClose, user, isAdmin }) {
   const cat = getCat(exp.category_id);
   const mem = getMem(exp.paid_by);
+  const isOwn = exp.created_by && exp.created_by === user?.id;
+  const withinWindow = exp.created_at && (Date.now() - new Date(exp.created_at).getTime()) < 30 * 24 * 3600 * 1000;
+  const canDelete = isAdmin || (isOwn && withinWindow);
   return (
     <div className="ov" onClick={onClose}>
       <div className="mo" onClick={e => e.stopPropagation()}>
@@ -1571,7 +1621,12 @@ function ModalDet({ exp, getCat, getMem, onDel, onClose }) {
           </div>
         ))}
         <div style={{ height:22 }} />
-        <button className="bd" onClick={() => onDel(exp.id)}>🗑️  Delete expense</button>
+        {canDelete
+          ? <button className="bd" onClick={() => onDel(exp.id)}>🗑️  Delete expense</button>
+          : <div style={{ background:"var(--bg)", border:"1.5px solid var(--br)", borderRadius:10, padding:11, fontSize:12, color:"var(--mu)", textAlign:"center" }}>
+              🔒 {isOwn ? "Only deletable within 30 days of adding it" : "Only the account owner can delete this expense"}
+            </div>
+        }
         <div style={{ height:9 }} /><button className="bg" onClick={onClose}>Close</button>
       </div>
     </div>
