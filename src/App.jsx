@@ -292,8 +292,8 @@ const STYLES = `
 
   /* Nav */
   nav { display: flex; background: var(--card); border-top: 1px solid var(--br); padding: 8px 0 20px; flex-shrink: 0; }
-  .ni { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 6px 4px; border: none; background: none; color: var(--mu); font-size: 10px; font-weight: 600; cursor: pointer; font-family: inherit; }
-  .ni.on { color: var(--p); }
+  .ni { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 8px 4px 6px; border: none; border-top: 2.5px solid transparent; background: none; color: var(--mu); font-size: 10px; font-weight: 600; cursor: pointer; font-family: inherit; }
+  .ni.on { color: var(--p); border-top-color: var(--p); }
   .ni svg { width: 22px; height: 22px; margin-bottom: 1px; }
   .nadd { flex: 1; display: flex; align-items: center; justify-content: center; }
   .addbtn { width: 54px; height: 54px; border-radius: 50%; background: var(--p); border: none; cursor: pointer; color: #fff; font-size: 28px; box-shadow: 0 4px 16px rgba(30,58,138,.4); margin-top: -18px; display: flex; align-items: center; justify-content: center; }
@@ -945,11 +945,8 @@ function ScreenDash({ rangeExp, rangeTotal, rangeCatS, rangeMemS, catS, cats, me
     <div>
       <div className="hd">
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-          <h1>Dashboard</h1>
-          <div style={{ display:"flex", gap:8, alignItems:"center" }}>
-            <RangeModeTabs mode={dashMode} setMode={setDashMode} />
-            <button onClick={onSettings} className="theme-btn" style={{ padding:"7px 10px" }}>⚙️</button>
-          </div>
+          <RangeModeTabs mode={dashMode} setMode={setDashMode} />
+          <button onClick={onSettings} className="theme-btn" style={{ padding:"7px 10px" }}>⚙️</button>
         </div>
       </div>
 
@@ -1114,7 +1111,7 @@ function ScreenExp({ expenses, cats, getCat, getMem, onE, isAdmin, onBulkDelete 
     <div>
       <div className="hd">
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-          <div><h1>Expenses</h1><p>{list.length} of {expenses.length} total</p></div>
+          <p style={{ fontSize:14, fontWeight:700, color:"var(--tx)" }}>{list.length} of {expenses.length} total</p>
           {isAdmin && (
             <button onClick={() => selectMode ? exitSelect() : setSelectMode(true)} className="theme-btn">
               {selectMode ? "Cancel" : "Select"}
@@ -1190,7 +1187,7 @@ function ScreenBud({ buds, cats, catS, getCat, month, prevM, nextM, onEdit, onAd
 
   return (
     <div>
-      <div className="hd"><h1>Budgets</h1><p>Monthly limits per category</p></div>
+      <div className="hd"><p style={{ fontSize:14, fontWeight:700, color:"var(--tx)" }}>Monthly limits per category</p></div>
       <div className="mnav"><button onClick={prevM}>‹</button><span>{mLabel(month)}</span><button onClick={nextM}>›</button></div>
 
       {tb > 0 && (
@@ -1291,7 +1288,7 @@ function ScreenAdm({ cats, members, expenses, budgets, noteHist, pendingProfiles
     <div>
       <div className="hd">
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-          <div><h1>Manage</h1><p>{user?.email}</p></div>
+          <p style={{ fontSize:14, fontWeight:700, color:"var(--tx)" }}>{user?.email}</p>
           <button onClick={onOut} style={{ background:"#FEF2F2", border:"none", color:"var(--rd)", borderRadius:8, padding:"8px 13px", fontSize:13, fontWeight:600, cursor:"pointer", fontFamily:"inherit" }}>Sign out</button>
         </div>
       </div>
