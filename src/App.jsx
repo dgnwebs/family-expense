@@ -245,8 +245,13 @@ const STYLES = `
     --bg: #EFF6FF; --card: #FFFFFF; --tx: #1A1A2E; --mu: #6B7280; --br: #E5E7EB;
   }
   :root[data-theme="dark"] {
+    /* Lighter blue than the light-theme navy — navy-on-near-black has poor
+       contrast when used as text/icon color (not just button fills) */
+    --p: #5B8DEF;
     --bg: #0D1117; --card: #161B22; --tx: #E6EDF3; --mu: #8B949E; --br: #30363D; --ps: #1C2A4A;
   }
+  :root[data-theme="dark"] input,
+  :root[data-theme="dark"] select { color-scheme: dark; }
   html, body, #root { height: 100%; background: var(--bg); }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; overflow: hidden; }
   #root { display: flex; justify-content: center; }
@@ -773,7 +778,7 @@ function ScreenDash({ rangeExp, rangeTotal, rangeCatS, rangeMemS, catS, cats, me
               <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:5 }}>
                 <span style={{ fontSize:17 }}>{c.icon}</span>
                 <span style={{ flex:1, fontSize:14, fontWeight:600, color:"var(--tx)" }}>{c.name}</span>
-                <span style={{ fontSize:14, fontWeight:700 }}>{fmt(c.amt)}</span>
+                <span style={{ fontSize:14, fontWeight:700, color:"var(--tx)" }}>{fmt(c.amt)}</span>
                 <span style={{ fontSize:11, color:"var(--mu)" }}>{Math.round(c.amt / rangeTotal * 100)}%</span>
               </div>
               <div className="lbb"><div className="lb" style={{ width: (c.amt / maxC * 100) + "%", background: c.color }} /></div>
