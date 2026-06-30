@@ -484,28 +484,47 @@ function Login({ onLogin }) {
   const createProfile = (token, userId) =>
     api.post("profiles", { id: userId, email, name: name.trim(), status: "pending" }, token).catch(() => {});
 
+  // Handles a previously-removed member trying to get back in: if their
+  // profile is missing (insert never ran) or was declined/revoked, this
+  // (re)creates it as pending and notifies the admin. Only called from an
+  // explicit sign-in/sign-up attempt — never from passive session
+  // restoration on page load, so a refresh can't resurrect a decline.
+  const reactivateIfRevoked = async (token, userId, em) => {
+    const res = await api.get(`profiles?id=eq.${userId}`, token);
+    const p = Array.isArray(res) ? res[0] : null;
+    const nm = p?.name || em.split("@")[0];
+    if (p && p.status !== "approved" && p.status !== "pending") {
+      await api.patch(`profiles?id=eq.${userId}`, { status: "pending" }, token).catch(() => {});
+      notifyAdminSignup(nm, em);
+    } else if (!p) {
+      await api.post("profiles", { id: userId, email: em, name: nm, status: "pending" }, token).catch(() => {});
+      notifyAdminSignup(nm, em);
+    }
+  };
+
   const go = async () => {
     setErr(""); setInvalidLogin(false); setBusy(true);
     if (isNew) {
       if (!name.trim()) { setErr("Please enter your name"); setBusy(false); return; }
       const res = await signUp(email, pass);
-      if (!res.access_token && errMsg(res)) { setErr(errMsg(res)); setBusy(false); return; }
       if (res.access_token) {
         await createProfile(res.access_token, res.user.id);
         notifyAdminSignup(name.trim(), email);
         onLogin(res.access_token, res.user, res.expires_in, res.refresh_token);
         return;
       }
-      // No immediate token — attempt sign-in with same credentials
+      // No immediate token — either email confirmation is required, or this
+      // email is already registered (e.g. a previously removed member
+      // trying to rejoin). Either way, try signing in with the same
+      // credentials rather than dead-ending on "already registered".
       const res2 = await signIn(email, pass);
       setBusy(false);
       if (res2.access_token) {
-        await createProfile(res2.access_token, res2.user.id);
-        notifyAdminSignup(name.trim(), email);
+        await reactivateIfRevoked(res2.access_token, res2.user.id, email);
         onLogin(res2.access_token, res2.user, res2.expires_in, res2.refresh_token);
         return;
       }
-      setErr(errMsg(res2) || "Account created — please sign in.");
+      setErr(errMsg(res) || "This email is already registered. Enter the correct password to sign back in, or ask the account owner for help.");
       setIsNew(false); return;
     }
     const res = await signIn(email, pass);
@@ -515,6 +534,7 @@ function Login({ onLogin }) {
       setPass("");
       return;
     }
+    await reactivateIfRevoked(res.access_token, res.user.id, email);
     onLogin(res.access_token, res.user, res.expires_in, res.refresh_token);
   };
 
