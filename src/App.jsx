@@ -350,6 +350,7 @@ const STYLES = `
   .drange { background: var(--card); border-radius: 16px; margin: 0 16px 14px; padding: 14px; display: flex; flex-direction: column; gap: 12px; box-shadow: 0 1px 8px rgba(0,0,0,.06); }
   .drange .tabs { padding: 0; }
   .drange .tab { background: var(--bg); }
+  .drange .tab.on { background: var(--p); }
   .drange .mnav { padding: 0; }
   .drange .mnav button { background: var(--bg); }
 
@@ -1185,6 +1186,7 @@ function ScreenBud({ buds, cats, catS, getCat, month, prevM, nextM, onEdit, onAd
 // ─── Admin Screen ─────────────────────────────────────────────────────────────
 function ScreenAdm({ cats, members, expenses, budgets, noteHist, pendingProfiles, onApprove, onDecline, onArchiveMember, getCat, getMem, onEC, onNewCat, onAM, onE, onOut, user, darkMode, toggleDark, currency, onCurrency, fontSize, onFontSize }) {
   const [t, setT] = useState("members");
+  const [currencyOpen, setCurrencyOpen] = useState(false);
   const isAdmin = user?.email === ADMIN_EMAIL;
   const mt = members.filter(m => !m.archived).map(m => ({ ...m, total: expenses.filter(e => e.paid_by === m.id).reduce((s, e) => s + Number(e.amount), 0), cnt: expenses.filter(e => e.paid_by === m.id).length }));
   const mx = Math.max(...mt.map(m => m.total), 1);
@@ -1434,17 +1436,25 @@ function ScreenAdm({ cats, members, expenses, budgets, noteHist, pendingProfiles
 
           <div className="card" style={{ margin:0 }}>
             <div style={{ fontSize:15, fontWeight:700, color:"var(--tx)", marginBottom:14 }}>Currency</div>
-            <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-              {CURRENCIES.map(c => (
-                <div key={c.code} onClick={() => onCurrency(c)} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"11px 13px", borderRadius:10, border:`1.5px solid ${currency.code === c.code ? "var(--p)" : "var(--br)"}`, background: currency.code === c.code ? "var(--ps)" : "var(--bg)", cursor:"pointer" }}>
-                  <div>
-                    <span style={{ fontSize:14, fontWeight:600, color:"var(--tx)" }}>{c.symbol} — {c.code}</span>
-                    <span style={{ fontSize:12, color:"var(--mu)", marginLeft:8 }}>{c.name}</span>
-                  </div>
-                  {currency.code === c.code && <span style={{ color:"var(--p)", fontWeight:700 }}>✓</span>}
-                </div>
-              ))}
+            <div onClick={() => setCurrencyOpen(o => !o)} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"11px 13px", borderRadius:10, border:"1.5px solid var(--p)", background:"var(--ps)", cursor:"pointer" }}>
+              <div>
+                <span style={{ fontSize:14, fontWeight:600, color:"var(--tx)" }}>{currency.symbol} — {currency.code}</span>
+                <span style={{ fontSize:12, color:"var(--mu)", marginLeft:8 }}>{currency.name}</span>
+              </div>
+              <span style={{ color:"var(--p)", fontWeight:700, fontSize:12, transform: currencyOpen ? "rotate(180deg)" : "none", display:"inline-block" }}>▾</span>
             </div>
+            {currencyOpen && (
+              <div style={{ display:"flex", flexDirection:"column", gap:8, marginTop:8 }}>
+                {CURRENCIES.filter(c => c.code !== currency.code).map(c => (
+                  <div key={c.code} onClick={() => { onCurrency(c); setCurrencyOpen(false); }} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"11px 13px", borderRadius:10, border:"1.5px solid var(--br)", background:"var(--bg)", cursor:"pointer" }}>
+                    <div>
+                      <span style={{ fontSize:14, fontWeight:600, color:"var(--tx)" }}>{c.symbol} — {c.code}</span>
+                      <span style={{ fontSize:12, color:"var(--mu)", marginLeft:8 }}>{c.name}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="card" style={{ margin:0 }}>
