@@ -302,8 +302,8 @@ const STYLES = `
   /* Cards */
   .card { background: var(--card); border-radius: 16px; padding: 18px; margin: 0 16px 12px; box-shadow: 0 1px 8px rgba(0,0,0,.06); }
   .hero { background: linear-gradient(135deg, #1E3A8A, #3B5FBF); border-radius: 20px; margin: 0 16px 14px; padding: 22px; color: #fff; }
-  .hd { padding: 18px 20px 10px; }
-  .hd h1 { font-size: 24px; font-weight: 700; color: var(--tx); }
+  .hd { padding: 20px 20px 14px; }
+  .hd h1 { font-size: 19px; font-weight: 700; color: var(--tx); }
   .hd p { font-size: 13px; color: var(--mu); margin-top: 2px; }
 
   /* Form */
@@ -945,7 +945,7 @@ function ScreenDash({ rangeExp, rangeTotal, rangeCatS, rangeMemS, catS, cats, me
     <div>
       <div className="hd">
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-          <h1>Overview</h1>
+          <h1>Dashboard</h1>
           <div style={{ display:"flex", gap:8, alignItems:"center" }}>
             <RangeModeTabs mode={dashMode} setMode={setDashMode} />
             <button onClick={onSettings} className="theme-btn" style={{ padding:"7px 10px" }}>⚙️</button>
