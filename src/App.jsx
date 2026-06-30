@@ -749,8 +749,12 @@ function ScreenDash({ rangeExp, rangeTotal, rangeCatS, rangeMemS, catS, cats, me
   const maxC = top[0]?.amt || 1;
 
   // Month mode: 4 weekly buckets. Week mode: 7 daily bars. Today mode: no chart.
+  // Last bucket extends to the actual end of the month (28-31 days), not a
+  // hardcoded day 28 — otherwise expenses dated 29-31 silently fell into no
+  // bucket at all and showed as a flat zero despite a correct Total Spent.
+  const daysInMonth = useMemo(() => { const [y, mo] = month.split("-").map(Number); return new Date(y, mo, 0).getDate(); }, [month]);
   const wk = dashMode === "month"
-    ? [0,1,2,3].map(i => { const s = i*7+1, e = s+6; return rangeExp.filter(x => { const d = parseInt(x.date?.slice(8) || 0); return d >= s && d <= e; }).reduce((s, x) => s + Number(x.amount), 0); })
+    ? [0,1,2,3].map(i => { const s = i*7+1, e = i === 3 ? daysInMonth : s+6; return rangeExp.filter(x => { const d = parseInt(x.date?.slice(8) || 0); return d >= s && d <= e; }).reduce((s, x) => s + Number(x.amount), 0); })
     : [];
   const days = dashMode === "week" ? [0,1,2,3,4,5,6].map(i => addDays(weekStart, i)) : [];
   const dy   = dashMode === "week" ? days.map(d => rangeExp.filter(e => e.date === d).reduce((s, e) => s + Number(e.amount), 0)) : [];
