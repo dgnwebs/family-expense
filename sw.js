@@ -1,27 +1,23 @@
-const CACHE = 'fam-exp-v1';
+// Bump this whenever you want to force-clear old installs
+const CACHE = 'fam-exp-v2';
 
-self.addEventListener('install', e => {
+self.addEventListener('install', () => {
   self.skipWaiting();
-  e.waitUntil(
-    caches.open(CACHE).then(c =>
-      c.addAll(['/family-expense/', '/family-expense/index.html'])
-    )
-  );
 });
 
 self.addEventListener('activate', e => {
-  e.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
-    )
-  );
-  self.clients.claim();
+  e.waitUntil((async () => {
+    const keys = await caches.keys();
+    await Promise.all(keys.map(k => caches.delete(k)));
+    await self.clients.claim();
+    const clients = await self.clients.matchAll({ type: 'window' });
+    clients.forEach(c => c.postMessage({ type: 'SW_UPDATED' }));
+  })());
 });
 
-// Network first, fall back to cache (app shell only — API calls always go to network)
+// Always go to the network, bypassing HTTP cache, so installed devices
+// never get stuck on a stale build. No offline caching — freshness first.
 self.addEventListener('fetch', e => {
-  if (e.request.url.includes('supabase.co')) return; // never cache API calls
-  e.respondWith(
-    fetch(e.request).catch(() => caches.match(e.request))
-  );
+  if (e.request.url.includes('supabase.co')) return; // never touch API calls
+  e.respondWith(fetch(e.request, { cache: 'no-store' }));
 });
