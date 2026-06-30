@@ -145,11 +145,21 @@ const NOTE_LEXICON = [
 ];
 const titleCase = s => s.replace(/\b\w/g, c => c.toUpperCase());
 
+// Matches only at the start of the text or the start of one of its words —
+// e.g. "ac" matches "Academy Fee" (word "Academy" starts with it) but not
+// "Snacks" (the "ac" only appears mid-word, which a plain .includes() would
+// wrongly treat as a match).
+const matchesBuf = (text, buf) => {
+  if (!buf) return true;
+  const lower = text.toLowerCase();
+  return lower.startsWith(buf) || lower.split(/\s+/).some(w => w.startsWith(buf));
+};
+
 // Frequency-ranked notes from the persistent note_history table (survives
 // expense deletion — see note-history.sql), optionally scoped to one category
 function rankedHistory(noteHistory, categoryId, buf) {
   return noteHistory
-    .filter(h => (!categoryId || h.category_id === categoryId) && (!buf || h.text.toLowerCase().includes(buf)))
+    .filter(h => (!categoryId || h.category_id === categoryId) && matchesBuf(h.text, buf))
     .sort((a, b) => b.count - a.count || (b.last_used || "").localeCompare(a.last_used || ""))
     .map(h => h.text);
 }
@@ -171,7 +181,7 @@ function noteSuggestions(buf, noteHistory, categoryId) {
 
   const fromLexicon = [];
   for (const item of NOTE_LEXICON) {
-    if (item.name.includes(buf) || buf.includes(item.name)) {
+    if (matchesBuf(item.name, buf) || buf.includes(item.name)) {
       const cap = titleCase(item.name);
       if (item.basket) {
         fromLexicon.push(`For ${cap}`);
