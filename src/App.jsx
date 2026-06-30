@@ -524,7 +524,12 @@ function Login({ onLogin }) {
         onLogin(res2.access_token, res2.user, res2.expires_in, res2.refresh_token);
         return;
       }
-      setErr(errMsg(res) || "This email is already registered. Enter the correct password to sign back in, or ask the account owner for help.");
+      // Both signup AND the sign-in fallback failed — almost always means
+      // the password typed here doesn't match the original account's
+      // password. Showing Supabase's raw "User already registered" here
+      // would be misleading since it implies nothing can be done; the
+      // actionable message is "use the right password instead".
+      setErr("This email is already registered. Enter the correct (original) password above and try Sign in, or ask the account owner for help if you've forgotten it.");
       setIsNew(false); return;
     }
     const res = await signIn(email, pass);
@@ -781,7 +786,7 @@ export default function App() {
   const approveProfile = async profile => {
     const ini = profile.name.split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2) || "?";
     const color = PALETTE[members.length % PALETTE.length];
-    const mRes = await api.post("members", { name: profile.name, color, initials: ini }, T);
+    const mRes = await api.post("members", { name: profile.name, color, initials: ini, email: profile.email }, T);
     const newMember = Array.isArray(mRes) && mRes[0];
     if (newMember) setMems(p => [...p, newMember]);
     const pRes = await api.patch(`profiles?id=eq.${profile.id}`, { status: "approved", member_id: newMember?.id || null }, T);
