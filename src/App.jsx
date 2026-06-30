@@ -174,15 +174,20 @@ function noteSuggestions(buf, noteHistory, categoryId) {
   if (!buf) return rankedHistory(noteHistory, categoryId, "").slice(0, 4);
 
   // History is a small, category-scoped list, so even a 1-character prefix
-  // is a useful match (e.g. "f" -> "Fuel"). The generic 40-item lexicon below
-  // stays gated at 2+ chars since a single letter would match too much of it.
+  // is a useful match (e.g. "f" -> "Fuel").
   const fromCatHistory = rankedHistory(noteHistory, categoryId, buf).slice(0, 3);
   const fromAllHistory = categoryId
     ? rankedHistory(noteHistory, null, buf).filter(t => !fromCatHistory.includes(t)).slice(0, 2)
     : [];
 
+  const out = [...fromCatHistory, ...fromAllHistory];
+
+  // The generic lexicon is a pure cold-start fallback for before the family
+  // has ever entered a single real note anywhere in the app. The moment any
+  // real history exists, suggestions rely solely on actual entered habits —
+  // never guessed generic items, even for a brand-new category.
   const fromLexicon = [];
-  if (buf.length >= 2) {
+  if (noteHistory.length === 0 && buf.length >= 2) {
     for (const item of NOTE_LEXICON) {
       if (matchesBuf(item.name, buf) || buf.includes(item.name)) {
         const cap = titleCase(item.name);
@@ -196,7 +201,6 @@ function noteSuggestions(buf, noteHistory, categoryId) {
     }
   }
 
-  const out = [...fromCatHistory, ...fromAllHistory];
   for (const s of fromLexicon) {
     if (out.length >= 6) break;
     if (!out.some(x => x.toLowerCase() === s.toLowerCase())) out.push(s);
