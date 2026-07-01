@@ -442,6 +442,11 @@ const STYLES = `
   .fpbody { flex: 1; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; padding: 20px 16px 36px; }
   .fpbody::-webkit-scrollbar { display: none; }
 
+  /* Sidebar brand/user elements — hidden on phone, shown on tablet */
+  .sidebar-brand { display: none; }
+  .sidebar-user  { display: none; }
+  .dash-tablet-hd { display: none; }
+
   /* ── Tablet layout (≥768px) ────────────────────────────────────────────── */
   @media (min-width: 768px) {
     /* Full-width: remove the 430px phone cap, switch to row layout */
@@ -450,34 +455,87 @@ const STYLES = `
     /* Left sidebar nav */
     nav {
       flex-direction: column; align-items: stretch; justify-content: flex-start;
-      width: 220px; min-width: 220px; height: 100%;
+      width: 240px; min-width: 240px; height: 100%;
       border-top: none; border-right: 1px solid var(--br);
-      padding: 20px 0 24px; overflow-y: auto;
+      padding: 0; overflow-y: auto;
     }
-    /* Nav items: icon + label side-by-side in a row instead of stacked */
+
+    /* Sidebar brand header */
+    .sidebar-brand {
+      display: flex; align-items: center; gap: 12px;
+      padding: 22px 18px 18px; border-bottom: 1px solid var(--br);
+    }
+    .sidebar-brand-icon {
+      width: 40px; height: 40px; border-radius: 10px;
+      background: var(--p); color: #fff; font-size: 14px; font-weight: 800;
+      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    }
+    .sidebar-brand-name { font-size: 15px; font-weight: 800; color: var(--tx); }
+    .sidebar-brand-sub  { font-size: 11px; color: var(--mu); margin-top: 2px; }
+
+    /* Nav items area */
+    .sidebar-nav-items { padding: 12px 0; flex: 1; }
+
+    /* "+ New expense" button */
+    .nadd { order: 0; flex: 0; padding: 12px 16px 4px; justify-content: stretch; }
+    .addbtn {
+      width: 100%; height: 44px; border-radius: 10px;
+      margin-top: 0; font-size: 15px; font-weight: 700;
+      box-shadow: 0 2px 8px rgba(30,58,138,.25);
+      letter-spacing: 0.2px;
+    }
+
+    /* Nav items: icon + label in a row, pill active style */
     .ni {
       flex-direction: row; justify-content: flex-start;
-      gap: 14px; padding: 13px 22px; font-size: 13px; border-top: none;
-      width: 100%; border-radius: 0;
+      gap: 12px; padding: 11px 12px 11px 16px;
+      font-size: 13px; border-top: none;
+      margin: 1px 10px; width: calc(100% - 20px); border-radius: 9px;
     }
-    .ni svg { width: 20px; height: 20px; }
-    /* Active indicator: vertical left-edge bar instead of horizontal top bar */
-    .ni.on::before {
-      top: 50%; left: 0; transform: translateY(-50%);
-      width: 3px; height: 28px; border-radius: 0 3px 3px 0;
+    .ni svg { width: 19px; height: 19px; }
+    .ni.on { background: var(--ps); color: var(--p); border-radius: 9px; }
+    .ni.on::before { display: none; } /* pill replaces the border indicator */
+
+    /* Sidebar user footer */
+    .sidebar-user {
+      display: flex; align-items: center; gap: 10px;
+      padding: 14px 16px; border-top: 1px solid var(--br);
+      margin-top: auto;
     }
-    /* "+ New expense" button: move to top of sidebar, full-width rectangle */
-    .nadd { order: -1; flex: 0; padding: 4px 16px 20px; justify-content: stretch; }
-    .addbtn {
-      width: 100%; height: 46px; border-radius: 12px;
-      margin-top: 0; font-size: 18px; box-shadow: 0 2px 8px rgba(30,58,138,.25);
+    .sidebar-user-info { flex: 1; min-width: 0; }
+    .sidebar-user-name { font-size: 13px; font-weight: 700; color: var(--tx); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .sidebar-user-role { font-size: 11px; color: var(--mu); margin-top: 1px; }
+    .sidebar-user-gear { background: none; border: none; cursor: pointer; color: var(--mu); font-size: 16px; padding: 4px; border-radius: 6px; }
+    .sidebar-user-gear:hover { color: var(--tx); }
+
+    /* Dashboard phone header hidden, tablet header shown */
+    .dash-hd { display: none; }
+    .drange.dash-drange { display: none; }
+    .dash-tablet-hd {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 22px 28px 16px; flex-wrap: wrap; gap: 12px;
     }
-    /* Content area breathes a bit more on tablet */
-    .hd { padding: 22px 28px 12px; }
+    .dash-title-group h1 { font-size: 22px; font-weight: 800; color: var(--tx); margin: 0; }
+    .dash-title-group .dash-date-sub { font-size: 12px; color: var(--mu); margin-top: 3px; }
+    .dash-tablet-controls { display: flex; align-items: center; gap: 10px; }
+    .dash-inline-nav { display: flex; align-items: center; gap: 4px; }
+    .dash-inline-nav button { background: var(--card); border: 1.5px solid var(--br); border-radius: 8px; width: 32px; height: 32px; cursor: pointer; font-size: 16px; color: var(--tx); display: flex; align-items: center; justify-content: center; }
+    .dash-inline-nav span { font-size: 14px; font-weight: 700; color: var(--tx); padding: 0 10px; white-space: nowrap; }
+
+    /* 2-column grid: chart-col (right, col 2 row 1) + recent-col (left, col 1 row 1).
+       Source order is chart first then recent, but explicit grid-column/row
+       placements flip them visually so phone order is unchanged. Everything
+       else inside the grid auto-spans both columns (full width below). */
+    .dash-twocol { display: grid; grid-template-columns: 1fr 1fr; margin: 0 20px; }
+    .dash-twocol > * { grid-column: 1 / -1; } /* full-width default */
+    .dash-chart-col  { grid-column: 2 !important; grid-row: 1; padding-left: 7px; }
+    .dash-recent-col { grid-column: 1 !important; grid-row: 1; padding-right: 7px; }
+
+    /* Spacing and content */
     .card { margin: 0 20px 14px; }
     .drange { margin: 0 20px 14px; }
-    /* Toast shouldn't span over the sidebar */
-    .toast { left: 236px; }
+    .hero { margin: 0 20px 14px; }
+    .toast { left: 256px; }
   }
 `;
 
@@ -1143,8 +1201,23 @@ export default function App() {
           {!loading && tab === "admin"     && <ScreenAdm  cats={cats} members={members} expenses={expenses} budgets={budgets} noteHist={noteHist} pendingProfiles={pendingProfiles} onApprove={approveProfile} onDecline={declineProfile} onArchiveMember={archiveMember} getCat={getCat} getMem={getMem} onEC={c => { setSel(c); setModal("eC"); }} onNewCat={() => setModal("newC")} onAM={() => setModal("addM")} onE={e => { setSel(e); setModal("det"); }} onOut={handleOut} user={user} darkMode={darkMode} toggleDark={toggleDark} currency={currency} onCurrency={handleCurrency} fontSize={fontSize} onFontSize={handleFontSize} t={adminTab} setT={setAdminTab} />}
         </div>
 
-        {/* Bottom Nav */}
+        {/* Bottom Nav (becomes left sidebar on tablet) */}
         <nav>
+          {/* App brand — tablet only */}
+          <div className="sidebar-brand">
+            <div className="sidebar-brand-icon">FE</div>
+            <div>
+              <div className="sidebar-brand-name">Family Expense</div>
+              <div className="sidebar-brand-sub">Track Spends Together</div>
+            </div>
+          </div>
+
+          {/* New expense button */}
+          <div className="nadd">
+            <button className="addbtn" onClick={() => setModal("add")}>＋</button>
+          </div>
+
+          {/* Nav items */}
           {[{ id:"dashboard", lbl:"Dashboard", Ico:IcoDash }, { id:"expenses", lbl:"Expenses", Ico:IcoExp }].map(t => (
             <button key={t.id} className={`ni${tab === t.id ? " on" : ""}`} onClick={() => setTab(t.id)}>
               <div style={{ position:"relative", display:"inline-flex" }}>
@@ -1158,15 +1231,28 @@ export default function App() {
               {t.lbl}
             </button>
           ))}
-          <div className="nadd">
-            <button className="addbtn" onClick={() => setModal("add")}>＋</button>
-          </div>
           {[{ id:"budgets", lbl:"Budgets", Ico:IcoBud }, { id:"admin", lbl:"Manage", Ico:IcoAdm }].map(t => (
             <button key={t.id} className={`ni${tab === t.id ? " on" : ""}`} onClick={() => setTab(t.id)}>
               <t.Ico />
               {t.lbl}
             </button>
           ))}
+
+          {/* User identity footer — tablet only */}
+          {(() => {
+            const nm = myProfile?.name || user?.email?.split("@")[0] || "User";
+            const ini = nm.split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2) || "?";
+            return (
+              <div className="sidebar-user">
+                <div className="av" style={{ width:34, height:34, fontSize:12, background: isAdminUser ? "var(--p)" : "#64748B", flexShrink:0 }}>{ini}</div>
+                <div className="sidebar-user-info">
+                  <div className="sidebar-user-name">{nm}</div>
+                  {isAdminUser && <div className="sidebar-user-role">Admin</div>}
+                </div>
+                <button className="sidebar-user-gear" onClick={openSettings} title="Settings">⚙️</button>
+              </div>
+            );
+          })()}
         </nav>
       </div>
     </>
@@ -1236,22 +1322,43 @@ function ScreenDash({ rangeExp, rangeTotal, rangeCatS, rangeMemS, catS, cats, me
     ? { main: weekRangeLabel(weekStart), sub: relWeekLabel(weeksBack), prev: shortDate(addDays(weekStart, -7)), next: atThisWeek ? null : shortDate(addDays(weekStart, 7)) }
     : { main: mLabel(month), sub: relMonthLabel(month), prev: monthShort(prevMonthStr(month)), next: monthShort(nextMonthStr(month)) };
 
+  const todaySubtitle = new Date().toLocaleDateString("en-US", { timeZone:"Asia/Kolkata", weekday:"long", month:"long", day:"numeric", year:"numeric" }).replace(/,\s*(\d{4})$/, " · $1");
+  const prevFn = dashMode === "today" ? prevDay : dashMode === "week" ? prevWeek : prevM;
+  const nextFn = dashMode === "today" ? nextDay : dashMode === "week" ? nextWeek : nextM;
+  const prevDis = dashMode === "week" && weeksBack >= 4;
+  const nextDis = (dashMode === "today" && atToday) || (dashMode === "week" && atThisWeek);
+
   return (
     <div>
-      <div className="hd">
+      {/* Phone header — hidden on tablet */}
+      <div className="hd dash-hd">
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
           <RangeModeTabs mode={dashMode} setMode={setDashMode} />
           <button onClick={onSettings} className="theme-btn" style={{ padding:"7px 10px" }}>⚙️</button>
         </div>
       </div>
+      <div className="dash-drange">
+        <RangeNavCard
+          mainLabel={nav.main} subLabel={nav.sub} prevLabel={nav.prev} nextLabel={nav.next}
+          onPrev={prevFn} onNext={nextFn} prevDisabled={prevDis} nextDisabled={nextDis}
+        />
+      </div>
 
-      <RangeNavCard
-        mainLabel={nav.main} subLabel={nav.sub} prevLabel={nav.prev} nextLabel={nav.next}
-        onPrev={dashMode === "today" ? prevDay : dashMode === "week" ? prevWeek : prevM}
-        onNext={dashMode === "today" ? nextDay : dashMode === "week" ? nextWeek : nextM}
-        prevDisabled={dashMode === "week" && weeksBack >= 4}
-        nextDisabled={(dashMode === "today" && atToday) || (dashMode === "week" && atThisWeek)}
-      />
+      {/* Tablet header — hidden on phone */}
+      <div className="dash-tablet-hd">
+        <div className="dash-title-group">
+          <h1>Overview</h1>
+          <div className="dash-date-sub">{todaySubtitle}</div>
+        </div>
+        <div className="dash-tablet-controls">
+          <RangeModeTabs mode={dashMode} setMode={setDashMode} />
+          <div className="dash-inline-nav">
+            <button onClick={prevFn} disabled={prevDis} style={prevDis ? { opacity:.35, cursor:"default" } : {}}>‹</button>
+            <span>{nav.main}</span>
+            <button onClick={nextFn} disabled={nextDis} style={nextDis ? { opacity:.35, cursor:"default" } : {}}>›</button>
+          </div>
+        </div>
+      </div>
 
       {/* Hero */}
       <div className="hero">
@@ -1268,6 +1375,11 @@ function ScreenDash({ rangeExp, rangeTotal, rangeCatS, rangeMemS, catS, cats, me
         </div>
       </div>
 
+      {/* 2-col grid on tablet: chart (col 2) + recent (col 1) side-by-side;
+          categories/who-paid/alerts auto-span full width below.
+          Source order is unchanged so phone layout stays the same. */}
+      <div className="dash-twocol">
+      <div className="dash-chart-col">
       {/* Spending chart — weekly buckets in Month mode, daily bars in Week mode */}
       {dashMode !== "today" && (
         <div className="card">
@@ -1283,6 +1395,7 @@ function ScreenDash({ rangeExp, rangeTotal, rangeCatS, rangeMemS, catS, cats, me
           </div>
         </div>
       )}
+      </div>
 
       {/* Category breakdown */}
       {top.length > 0 && (
@@ -1346,15 +1459,18 @@ function ScreenDash({ rangeExp, rangeTotal, rangeCatS, rangeMemS, catS, cats, me
         </>
       )}
 
-      {/* Recent */}
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"6px 20px 10px" }}>
-        <div style={{ fontSize:15, fontWeight:700, color:"var(--tx)" }}>Recent</div>
-        <button style={{ background:"none", border:"none", color:"var(--p)", fontSize:13, fontWeight:600, cursor:"pointer" }} onClick={onAll}>See all</button>
+      {/* Recent — in left column on tablet, bottom on phone */}
+      <div className="dash-recent-col">
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"6px 20px 10px" }}>
+          <div style={{ fontSize:15, fontWeight:700, color:"var(--tx)" }}>Recent</div>
+          <button style={{ background:"none", border:"none", color:"var(--p)", fontSize:13, fontWeight:600, cursor:"pointer" }} onClick={onAll}>See all</button>
+        </div>
+        {rangeExp.length === 0
+          ? <div className="center"><span style={{ fontSize:44 }}>🧾</span><div style={{ fontSize:17, fontWeight:700, color:"var(--tx)" }}>No expenses yet</div><div style={{ fontSize:13 }}>Tap + to add your first one</div></div>
+          : <div style={{ padding:"0 16px", display:"flex", flexDirection:"column", gap:8, paddingBottom:24 }}>{rangeExp.slice(0, 6).map(e => <ERow key={e.id} e={e} cat={getCat(e.category_id)} mem={getMem(e.paid_by)} onClick={() => onE(e)} />)}</div>
+        }
       </div>
-      {rangeExp.length === 0
-        ? <div className="center"><span style={{ fontSize:44 }}>🧾</span><div style={{ fontSize:17, fontWeight:700, color:"var(--tx)" }}>No expenses yet</div><div style={{ fontSize:13 }}>Tap + to add your first one</div></div>
-        : <div style={{ padding:"0 16px", display:"flex", flexDirection:"column", gap:8, paddingBottom:24 }}>{rangeExp.slice(0, 6).map(e => <ERow key={e.id} e={e} cat={getCat(e.category_id)} mem={getMem(e.paid_by)} onClick={() => onE(e)} />)}</div>
-      }
+      </div>{/* end dash-twocol */}
     </div>
   );
 }
