@@ -549,6 +549,10 @@ const STYLES = `
        (grid's own 20px + .card's 20px). Remove the card's side margins here
        so they match the columns above edge-to-edge. */
     .dash-twocol > .card { margin-left: 0; margin-right: 0; }
+    /* Who paid member list: remove the 16px side padding so it aligns
+       edge-to-edge like every other section. Needs !important because
+       the 16px comes from an inline style (which beats CSS classes). */
+    .who-paid-list { padding-left: 0 !important; padding-right: 0 !important; }
     /* Recent col card container fills the column */
     .dash-recent-col { background: var(--card); border-radius: 16px; box-shadow: 0 1px 8px rgba(0,0,0,.06); overflow: hidden; margin-right: 8px; }
 
@@ -1459,7 +1463,7 @@ function ScreenDash({ rangeExp, rangeTotal, rangeCatS, rangeMemS, catS, cats, me
       {members.filter(m => rangeMemS[m.id]).length > 0 && (
         <>
           <div style={{ padding:"6px 20px 10px", fontSize:15, fontWeight:700, color:"var(--tx)" }}>Who paid</div>
-          <div style={{ padding:"0 16px 12px", display:"flex", flexDirection:"column", gap:8 }}>
+          <div className="who-paid-list" style={{ padding:"0 16px 12px", display:"flex", flexDirection:"column", gap:8 }}>
             {members.filter(m => rangeMemS[m.id]).map(m => {
               const a = rangeMemS[m.id] || 0;
               return (
