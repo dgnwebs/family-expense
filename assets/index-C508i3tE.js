@@ -146,8 +146,10 @@ Error generating stack: `+e.message+`
 
     /* Left sidebar nav */
     nav {
+      order: -1;  /* DOM order puts nav after .scr, this pulls it left without changing DOM */
       flex-direction: column; align-items: stretch; justify-content: flex-start;
-      width: 210px; min-width: 210px; height: 100%;
+      flex-shrink: 0; width: 210px; min-width: 210px;
+      min-height: 0;  /* prevents flex item growing past parent; required for overflow-y to work */
       border-top: none; border-right: 1px solid var(--br);
       padding: 0; overflow-y: auto;
     }
