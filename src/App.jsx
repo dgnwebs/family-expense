@@ -674,6 +674,7 @@ export default function App() {
 
   const [tab,    setTab]    = useState("dashboard");
   const [adminTab, setAdminTab] = useState("members"); // ScreenAdm's active sub-tab, lifted so the dashboard's settings shortcut can jump straight to it
+  const [lastViewedExp, setLastViewedExp] = useState(null); // timestamp of last time this user viewed the Expenses tab
   const openSettings = () => { setTab("admin"); setAdminTab("settings"); };
   const [modal,  setModal]  = useState(null);
   const [sel,    setSel]    = useState(null);
@@ -813,6 +814,37 @@ export default function App() {
   }, [T, isAdminUser]);
 
   useEffect(() => { if (T && isApproved) load(); }, [T, isApproved, load]);
+
+  // ── New-expense badge ──────────────────────────────────────────────────────
+  // Initialise "last viewed" from localStorage once the user is known.
+  // First visit: stamp "now" so all existing data is treated as already seen.
+  useEffect(() => {
+    if (!user?.id) return;
+    const stored = parseFloat(localStorage.getItem(`fe_exp_view_${user.id}`));
+    setLastViewedExp(!stored || isNaN(stored) ? Date.now() : stored);
+  }, [user?.id]);
+
+  // Count expenses added by OTHER users since this user last viewed the tab.
+  // Uses created_at (UTC epoch) — accurate regardless of timezone.
+  const newExpCount = useMemo(() => {
+    if (!lastViewedExp || !user?.id || tab === "expenses") return 0;
+    return expenses.filter(e =>
+      e.created_by && e.created_by !== user.id &&
+      new Date(e.created_at).getTime() > lastViewedExp
+    ).length;
+  }, [expenses, lastViewedExp, user?.id, tab]);
+
+  // Clear the badge and persist the "seen" timestamp for this user.
+  const markExpensesSeen = useCallback(() => {
+    if (!user?.id) return;
+    const ts = Date.now();
+    setLastViewedExp(ts);
+    localStorage.setItem(`fe_exp_view_${user.id}`, String(ts));
+  }, [user?.id]);
+
+  // Auto-clear whenever the Expenses tab becomes active, regardless of
+  // which code path triggered the navigation.
+  useEffect(() => { if (tab === "expenses") markExpensesSeen(); }, [tab]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Re-fetch data when the app is resumed (switched back to, or reopened
   // from the background) — "new pushed changes" usually means new data too
@@ -1115,7 +1147,14 @@ export default function App() {
         <nav>
           {[{ id:"dashboard", lbl:"Dashboard", Ico:IcoDash }, { id:"expenses", lbl:"Expenses", Ico:IcoExp }].map(t => (
             <button key={t.id} className={`ni${tab === t.id ? " on" : ""}`} onClick={() => setTab(t.id)}>
-              <t.Ico />
+              <div style={{ position:"relative", display:"inline-flex" }}>
+                <t.Ico />
+                {t.id === "expenses" && newExpCount > 0 && (
+                  <span style={{ position:"absolute", top:-5, right:-7, background:"var(--rd)", color:"#fff", borderRadius:99, fontSize:9, fontWeight:800, minWidth:16, height:16, display:"flex", alignItems:"center", justifyContent:"center", padding:"0 3px", lineHeight:1, boxShadow:"0 1px 4px rgba(0,0,0,.3)", pointerEvents:"none" }}>
+                    {newExpCount > 9 ? "9+" : newExpCount}
+                  </span>
+                )}
+              </div>
               {t.lbl}
             </button>
           ))}
