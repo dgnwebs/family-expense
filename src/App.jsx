@@ -343,6 +343,7 @@ const STYLES = `
   .ni svg { width: 22px; height: 22px; margin-bottom: 1px; }
   .nadd { flex: 1; display: flex; align-items: center; justify-content: center; }
   .addbtn { width: 54px; height: 54px; border-radius: 50%; background: var(--p); border: none; cursor: pointer; color: #fff; font-size: 28px; box-shadow: 0 4px 16px rgba(30,58,138,.4); margin-top: -18px; display: flex; align-items: center; justify-content: center; }
+  .nadd-label { display: none; } /* shown on tablet only */
   .addbtn:active { transform: scale(.93); }
 
   /* Cards */
@@ -482,15 +483,17 @@ const STYLES = `
     .nadd { order: 0; flex: 0; padding: 12px 16px 4px; justify-content: stretch; }
     .addbtn {
       width: 100%; height: 44px; border-radius: 10px;
-      margin-top: 0; font-size: 15px; font-weight: 700;
+      margin-top: 0; font-size: 16px; font-weight: 700;
       box-shadow: 0 2px 8px rgba(30,58,138,.25);
-      letter-spacing: 0.2px;
+      gap: 6px;
     }
+    .nadd-label { display: inline; font-size: 14px; font-weight: 700; }
 
     /* Nav items: icon + label in a row, pill active style */
     .ni {
+      flex: none; /* override phone's flex:1 — in a column that makes items share the full height */
       flex-direction: row; justify-content: flex-start;
-      gap: 12px; padding: 11px 12px 11px 16px;
+      gap: 12px; padding: 10px 12px 10px 16px;
       font-size: 13px; border-top: none;
       margin: 1px 10px; width: calc(100% - 20px); border-radius: 9px;
     }
@@ -1219,7 +1222,7 @@ export default function App() {
 
           {/* New expense button */}
           <div className="nadd">
-            <button className="addbtn" onClick={() => setModal("add")}>＋</button>
+            <button className="addbtn" onClick={() => setModal("add")}>＋<span className="nadd-label">New expense</span></button>
           </div>
 
           {/* Nav items */}
