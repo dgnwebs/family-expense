@@ -441,6 +441,44 @@ const STYLES = `
   .fphd h2 { font-size: 18px; font-weight: 700; color: var(--tx); }
   .fpbody { flex: 1; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; padding: 20px 16px 36px; }
   .fpbody::-webkit-scrollbar { display: none; }
+
+  /* ── Tablet layout (≥768px) ────────────────────────────────────────────── */
+  @media (min-width: 768px) {
+    /* Full-width: remove the 430px phone cap, switch to row layout */
+    .app { max-width: none; flex-direction: row; }
+
+    /* Left sidebar nav */
+    nav {
+      flex-direction: column; align-items: stretch; justify-content: flex-start;
+      width: 220px; min-width: 220px; height: 100%;
+      border-top: none; border-right: 1px solid var(--br);
+      padding: 20px 0 24px; overflow-y: auto;
+    }
+    /* Nav items: icon + label side-by-side in a row instead of stacked */
+    .ni {
+      flex-direction: row; justify-content: flex-start;
+      gap: 14px; padding: 13px 22px; font-size: 13px; border-top: none;
+      width: 100%; border-radius: 0;
+    }
+    .ni svg { width: 20px; height: 20px; }
+    /* Active indicator: vertical left-edge bar instead of horizontal top bar */
+    .ni.on::before {
+      top: 50%; left: 0; transform: translateY(-50%);
+      width: 3px; height: 28px; border-radius: 0 3px 3px 0;
+    }
+    /* "+ New expense" button: move to top of sidebar, full-width rectangle */
+    .nadd { order: -1; flex: 0; padding: 4px 16px 20px; justify-content: stretch; }
+    .addbtn {
+      width: 100%; height: 46px; border-radius: 12px;
+      margin-top: 0; font-size: 18px; box-shadow: 0 2px 8px rgba(30,58,138,.25);
+    }
+    /* Content area breathes a bit more on tablet */
+    .hd { padding: 22px 28px 12px; }
+    .card { margin: 0 20px 14px; }
+    .drange { margin: 0 20px 14px; }
+    /* Toast shouldn't span over the sidebar */
+    .toast { left: 236px; }
+  }
 `;
 
 // ─── SVG Icons (currentColor inherits from CSS) ───────────────────────────────
@@ -1007,9 +1045,11 @@ export default function App() {
   // final rendered box lands exactly on the true viewport edges every time.
   const appStyle = {
     width: `calc(100vw / ${fontScale})`,
-    maxWidth: `calc(430px / ${fontScale})`,
     height: `calc(100vh / ${fontScale})`,
     transform: `scale(${fontScale})`,
+    // maxWidth deliberately left to CSS: 430px (phone via .app class) or
+    // none (tablet via @media — inline styles can't be overridden by media
+    // queries, so it has to live in the stylesheet, not here).
   };
 
   if (booting) return (
