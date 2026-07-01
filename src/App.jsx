@@ -1119,7 +1119,7 @@ export default function App() {
         {toast && <div className="toast">{toast}</div>}
 
         {/* Modals */}
-        {modal === "add"  && <ModalAdd  cats={cats} members={members.filter(m => !m.archived)} noteHist={noteHist} onSave={async e => { await addExp(e); setModal(null); }} onClose={() => setModal(null)} />}
+        {modal === "add"  && <ModalAdd  cats={cats} members={members.filter(m => !m.archived)} noteHist={noteHist} isAdmin={isAdminUser} onSave={async e => { await addExp(e); setModal(null); }} onClose={() => setModal(null)} />}
         {modal === "det"  && sel && <ModalDet  exp={sel} getCat={getCat} getMem={getMem} onDel={delExp} onClose={() => { setModal(null); setSel(null); }} user={user} isAdmin={isAdminUser} />}
         {modal === "addM" && <ModalMem  onSave={addMem} onClose={() => setModal(null)} />}
         {modal === "eC"   && sel && <ModalCat  cat={sel} onSave={updCat} onDel={delCat} onClose={() => { setModal(null); setSel(null); }} />}
@@ -1844,7 +1844,7 @@ function ERow({ e, cat, mem, onClick, selectMode, selected }) {
 }
 
 // ─── Modal: Add Expense ───────────────────────────────────────────────────────
-function ModalAdd({ cats, members, noteHist, onSave, onClose }) {
+function ModalAdd({ cats, members, noteHist, isAdmin, onSave, onClose }) {
   const [amt,  setAmt]  = useState("");
   const [note, setNote] = useState("");
   const [date, setDate] = useState(todayS());
@@ -1853,6 +1853,7 @@ function ModalAdd({ cats, members, noteHist, onSave, onClose }) {
   const [busy, setBusy] = useState(false);
   const [pickingCat, setPickingCat] = useState(true);
   const selectedCat = cats.find(c => c.id === cid);
+  const minDate = isAdmin ? "" : addDays(todayS(), -30); // 30-day backdate limit for non-admin
 
   const suggestions = useMemo(() => {
     const lines = note.split("\n");
@@ -1868,6 +1869,7 @@ function ModalAdd({ cats, members, noteHist, onSave, onClose }) {
 
   const go = async () => {
     if (!amt || isNaN(+amt)) return;
+    if (!isAdmin && minDate && date < minDate) return; // silently blocked — the date picker min attr already prevents this visually
     setBusy(true);
     await onSave({ amount: +amt, note: note.trim(), date, category_id: cid, paid_by: pid, tags: [] });
     setBusy(false);
@@ -1934,7 +1936,10 @@ function ModalAdd({ cats, members, noteHist, onSave, onClose }) {
             </div>
           )}
         </div>
-        <div className="fg"><label className="fl">Date</label><input className="fi" type="date" value={date} onChange={e => setDate(e.target.value)} style={{ display:"block", width:"90%", maxWidth:"90%", margin:"0 auto" }} /></div>
+        <div className="fg">
+          <label className="fl">Date{!isAdmin && <span style={{ fontWeight:400, textTransform:"none", letterSpacing:0, marginLeft:6, color:"var(--mu)" }}>— up to 30 days back</span>}</label>
+          <input className="fi" type="date" value={date} onChange={e => setDate(e.target.value)} min={minDate} max={todayS()} style={{ display:"block", width:"90%", maxWidth:"90%", margin:"0 auto" }} />
+        </div>
 
         {members.length === 0 && <div style={{ background:"#FFFBEB", borderRadius:8, padding:11, fontSize:13, color:"var(--am)", marginBottom:14 }}>⚠️ Add a family member first in Manage → Members</div>}
 
