@@ -349,6 +349,8 @@ const STYLES = `
   /* Cards */
   .card { background: var(--card); border-radius: 16px; padding: 18px; margin: 0 16px 12px; box-shadow: 0 1px 8px rgba(0,0,0,.06); }
   .hero { background: linear-gradient(135deg, #1E3A8A, #3B5FBF); border-radius: 20px; margin: 0 16px 14px; padding: 22px; color: #fff; }
+  .hero-divider { display: none; } /* shown on tablet only */
+  .hero-stats { display: flex; justify-content: space-between; margin-top: 18px; } /* phone: below amount */
   .hd { padding: 20px 20px 14px; }
   .hd h1 { font-size: 19px; font-weight: 700; color: var(--tx); }
   .hd p { font-size: 13px; color: var(--mu); margin-top: 2px; }
@@ -527,17 +529,24 @@ const STYLES = `
     .dash-inline-nav button { background: var(--card); border: 1.5px solid var(--br); border-radius: 8px; width: 32px; height: 32px; cursor: pointer; font-size: 16px; color: var(--tx); display: flex; align-items: center; justify-content: center; font-family: inherit; }
     .dash-inline-nav span { font-size: 14px; font-weight: 700; color: var(--tx); padding: 0 10px; white-space: nowrap; }
 
+    /* Hero: amount left, divider, stats right — all in one row */
+    .hero { display: flex; align-items: center; gap: 0; }
+    .hero-main { flex: 0 0 auto; }
+    .hero-divider { display: block; width: 1px; background: rgba(255,255,255,.25); align-self: stretch; margin: 0 28px; flex-shrink: 0; }
+    .hero-stats { margin-top: 0; } /* reset phone's margin-top; hero is now a row */
+    .hero-stats { flex: 1; display: flex; justify-content: space-around; align-items: center; }
+
     /* 2-column grid: chart-col (right, col 2 row 1) + recent-col (left, col 1 row 1).
        Source order is chart first then recent, but explicit grid-column/row
        placements flip them visually so phone order is unchanged. */
-    .dash-twocol { display: grid; grid-template-columns: 1fr 1fr; margin: 0 20px; gap: 14px 0; }
+    .dash-twocol { display: grid; grid-template-columns: 1fr 1fr; margin: 0 20px; gap: 0; align-items: stretch; }
     .dash-twocol > * { grid-column: 1 / -1; } /* full-width default for everything */
-    .dash-chart-col  { grid-column: 2 !important; grid-row: 1; }
-    .dash-recent-col { grid-column: 1 !important; grid-row: 1; }
-    /* Cards inside grid columns need no side margins (the column itself provides spacing) */
-    .dash-chart-col .card  { margin: 0 0 0 8px; }
-    /* Recent col gets a white card container to match the reference design */
-    .dash-recent-col { background: var(--card); border-radius: 16px; box-shadow: 0 1px 8px rgba(0,0,0,.06); overflow: hidden; padding-bottom: 8px; margin-right: 8px; }
+    .dash-chart-col  { grid-column: 2 !important; grid-row: 1; display: flex; flex-direction: column; }
+    .dash-recent-col { grid-column: 1 !important; grid-row: 1; display: flex; flex-direction: column; }
+    /* Equal height: card inside chart col fills the column */
+    .dash-chart-col .card { margin: 0 0 0 8px; flex: 1; }
+    /* Recent col card container fills the column */
+    .dash-recent-col { background: var(--card); border-radius: 16px; box-shadow: 0 1px 8px rgba(0,0,0,.06); overflow: hidden; margin-right: 8px; }
 
     /* Global spacing inside content area */
     .card  { margin: 0 20px 14px; }
@@ -918,12 +927,25 @@ export default function App() {
   // just new app code. Guarded so rapid app-switching doesn't fire repeated
   // requests back to back.
   const lastVisibleRefresh = useRef(Date.now());
+  const lastHiddenAt = useRef(null);
   useEffect(() => {
     if (!T || !isApproved) return;
     const onVisible = () => {
+      const now = Date.now();
+      if (document.visibilityState === "hidden") {
+        lastHiddenAt.current = now; // track when app was backgrounded
+        return;
+      }
       if (document.visibilityState !== "visible") return;
-      if (Date.now() - lastVisibleRefresh.current < 30000) return;
-      lastVisibleRefresh.current = Date.now();
+      // iOS PWAs can restore from a snapshot rather than doing a fresh network
+      // request, so the old JS bundle keeps running even after a deploy. A
+      // full reload after an extended background period bypasses the snapshot
+      // and lets the SW serve the latest code.
+      if (lastHiddenAt.current && now - lastHiddenAt.current > 4 * 60 * 60 * 1000) {
+        window.location.reload(); return;
+      }
+      if (now - lastVisibleRefresh.current < 30000) return;
+      lastVisibleRefresh.current = now;
       load();
     };
     document.addEventListener("visibilitychange", onVisible);
@@ -1370,10 +1392,16 @@ function ScreenDash({ rangeExp, rangeTotal, rangeCatS, rangeMemS, catS, cats, me
 
       {/* Hero */}
       <div className="hero">
-        <div style={{ fontSize:12, fontWeight:500, opacity:.8, textTransform:"uppercase", letterSpacing:.5 }}>Total spent</div>
-        <div style={{ fontSize:38, fontWeight:800, letterSpacing:-1, margin:"6px 0 2px" }}>{fmt(rangeTotal)}</div>
-        <div style={{ fontSize:13, opacity:.75 }}>{rangeExp.length} transactions · {_currCode}</div>
-        <div style={{ display:"flex", justifyContent:"space-between", marginTop:18 }}>
+        {/* Left: amount block */}
+        <div className="hero-main">
+          <div style={{ fontSize:12, fontWeight:500, opacity:.8, textTransform:"uppercase", letterSpacing:.5 }}>Total spent</div>
+          <div style={{ fontSize:38, fontWeight:800, letterSpacing:-1, margin:"6px 0 2px" }}>{fmt(rangeTotal)}</div>
+          <div style={{ fontSize:13, opacity:.75 }}>{rangeExp.length} transactions · {_currCode}</div>
+        </div>
+        {/* Divider — only visible on tablet */}
+        <div className="hero-divider" />
+        {/* Right: stats */}
+        <div className="hero-stats">
           {[{ v: members.length, l:"Members" }, { v: fmt(rangeTotal / Math.max(rangeExp.length, 1)), l:"Avg/expense" }, { v: buds.length, l:"Budgets" }].map((s, i) => (
             <div key={i} style={{ textAlign:"center" }}>
               <div style={{ fontSize:17, fontWeight:700 }}>{s.v}</div>
