@@ -231,10 +231,10 @@ Error generating stack: `+e.message+`
     /* 2-column grid: chart-col (right, col 2 row 1) + recent-col (left, col 1 row 1).
        Source order is chart first then recent, but explicit grid-column/row
        placements flip them visually so phone order is unchanged. */
-    .dash-twocol { display: grid; grid-template-columns: 1fr 1fr; margin: 0 20px; gap: 0; align-items: stretch; }
+    .dash-twocol { display: grid; grid-template-columns: 1fr 1fr; margin: 0 20px; column-gap: 0; row-gap: 0; align-items: stretch; }
     .dash-twocol > * { grid-column: 1 / -1; } /* full-width default for everything */
-    .dash-chart-col  { grid-column: 2 !important; grid-row: 1; display: flex; flex-direction: column; }
-    .dash-recent-col { grid-column: 1 !important; grid-row: 1; display: flex; flex-direction: column; }
+    .dash-chart-col  { grid-column: 2 !important; grid-row: 1; display: flex; flex-direction: column; margin-bottom: 16px; }
+    .dash-recent-col { grid-column: 1 !important; grid-row: 1; display: flex; flex-direction: column; margin-bottom: 16px; }
     /* Equal height: card inside chart col fills the column */
     .dash-chart-col .card { margin: 0 0 0 8px; flex: 1; }
     /* Cards auto-spanning full width below the 2-col grid get double margins
