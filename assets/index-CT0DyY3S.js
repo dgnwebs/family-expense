@@ -174,7 +174,7 @@ Error generating stack: `+e.message+`
     .sidebar-nav-items { padding: 12px 0; flex: 1; }
 
     /* "+ New expense" button */
-    .nadd { order: 0; flex: 0; padding: 12px 16px 4px; justify-content: stretch; }
+    .nadd { order: 0; flex: 0; padding: 12px 10px 10px; justify-content: stretch; }
     .addbtn {
       width: 100%; height: 44px; border-radius: 10px;
       margin-top: 0; font-size: 16px; font-weight: 700;
@@ -237,6 +237,10 @@ Error generating stack: `+e.message+`
     .dash-recent-col { grid-column: 1 !important; grid-row: 1; display: flex; flex-direction: column; }
     /* Equal height: card inside chart col fills the column */
     .dash-chart-col .card { margin: 0 0 0 8px; flex: 1; }
+    /* Cards auto-spanning full width below the 2-col grid get double margins
+       (grid's own 20px + .card's 20px). Remove the card's side margins here
+       so they match the columns above edge-to-edge. */
+    .dash-twocol > .card { margin-left: 0; margin-right: 0; }
     /* Recent col card container fills the column */
     .dash-recent-col { background: var(--card); border-radius: 16px; box-shadow: 0 1px 8px rgba(0,0,0,.06); overflow: hidden; margin-right: 8px; }
 
