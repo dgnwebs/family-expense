@@ -455,7 +455,7 @@ const STYLES = `
     /* Left sidebar nav */
     nav {
       flex-direction: column; align-items: stretch; justify-content: flex-start;
-      width: 240px; min-width: 240px; height: 100%;
+      width: 210px; min-width: 210px; height: 100%;
       border-top: none; border-right: 1px solid var(--br);
       padding: 0; overflow-y: auto;
     }
@@ -508,34 +508,37 @@ const STYLES = `
     .sidebar-user-gear { background: none; border: none; cursor: pointer; color: var(--mu); font-size: 16px; padding: 4px; border-radius: 6px; }
     .sidebar-user-gear:hover { color: var(--tx); }
 
-    /* Dashboard phone header hidden, tablet header shown */
+    /* Dashboard phone header + phone date nav card: hidden on tablet */
     .dash-hd { display: none; }
-    .drange.dash-drange { display: none; }
+    .dash-drange { display: none; }  /* was .drange.dash-drange — wrong: needed wrapper class only */
     .dash-tablet-hd {
       display: flex; justify-content: space-between; align-items: center;
-      padding: 22px 28px 16px; flex-wrap: wrap; gap: 12px;
+      padding: 20px 24px 14px; flex-wrap: wrap; gap: 12px;
     }
     .dash-title-group h1 { font-size: 22px; font-weight: 800; color: var(--tx); margin: 0; }
     .dash-title-group .dash-date-sub { font-size: 12px; color: var(--mu); margin-top: 3px; }
     .dash-tablet-controls { display: flex; align-items: center; gap: 10px; }
     .dash-inline-nav { display: flex; align-items: center; gap: 4px; }
-    .dash-inline-nav button { background: var(--card); border: 1.5px solid var(--br); border-radius: 8px; width: 32px; height: 32px; cursor: pointer; font-size: 16px; color: var(--tx); display: flex; align-items: center; justify-content: center; }
+    .dash-inline-nav button { background: var(--card); border: 1.5px solid var(--br); border-radius: 8px; width: 32px; height: 32px; cursor: pointer; font-size: 16px; color: var(--tx); display: flex; align-items: center; justify-content: center; font-family: inherit; }
     .dash-inline-nav span { font-size: 14px; font-weight: 700; color: var(--tx); padding: 0 10px; white-space: nowrap; }
 
     /* 2-column grid: chart-col (right, col 2 row 1) + recent-col (left, col 1 row 1).
        Source order is chart first then recent, but explicit grid-column/row
-       placements flip them visually so phone order is unchanged. Everything
-       else inside the grid auto-spans both columns (full width below). */
-    .dash-twocol { display: grid; grid-template-columns: 1fr 1fr; margin: 0 20px; }
-    .dash-twocol > * { grid-column: 1 / -1; } /* full-width default */
-    .dash-chart-col  { grid-column: 2 !important; grid-row: 1; padding-left: 7px; }
-    .dash-recent-col { grid-column: 1 !important; grid-row: 1; padding-right: 7px; }
+       placements flip them visually so phone order is unchanged. */
+    .dash-twocol { display: grid; grid-template-columns: 1fr 1fr; margin: 0 20px; gap: 14px 0; }
+    .dash-twocol > * { grid-column: 1 / -1; } /* full-width default for everything */
+    .dash-chart-col  { grid-column: 2 !important; grid-row: 1; }
+    .dash-recent-col { grid-column: 1 !important; grid-row: 1; }
+    /* Cards inside grid columns need no side margins (the column itself provides spacing) */
+    .dash-chart-col .card  { margin: 0 0 0 8px; }
+    /* Recent col gets a white card container to match the reference design */
+    .dash-recent-col { background: var(--card); border-radius: 16px; box-shadow: 0 1px 8px rgba(0,0,0,.06); overflow: hidden; padding-bottom: 8px; margin-right: 8px; }
 
-    /* Spacing and content */
-    .card { margin: 0 20px 14px; }
+    /* Global spacing inside content area */
+    .card  { margin: 0 20px 14px; }
     .drange { margin: 0 20px 14px; }
-    .hero { margin: 0 20px 14px; }
-    .toast { left: 256px; }
+    .hero  { margin: 0 20px 14px; }
+    .toast { left: 226px; }
   }
 `;
 
