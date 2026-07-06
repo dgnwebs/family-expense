@@ -884,7 +884,7 @@ export default function App() {
         api.get("expenses?order=date.desc,created_at.desc&limit=300", T),
         api.get("budgets?order=created_at", T),
         api.get("note_history?order=count.desc", T),
-        api.get("settings?select=key,value", T),
+        api.get("settings?select=key,value", T).catch(() => []), // table may not exist yet — never crash the load
       ];
       if (isAdminUser) calls.push(api.get("profiles?status=eq.pending&order=created_at", T));
       const [c, m, e, b, nh, sett, pend] = await Promise.all(calls);
