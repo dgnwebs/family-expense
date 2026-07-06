@@ -1231,7 +1231,7 @@ export default function App() {
 
         {/* Modals */}
         {modal === "add"  && <ModalAdd  cats={cats} members={members.filter(m => !m.archived)} noteHist={noteHist} isAdmin={isAdminUser} onSave={async e => { await addExp(e); setModal(null); }} onClose={() => setModal(null)} />}
-        {modal === "det"  && sel && <ModalDet  exp={sel} getCat={getCat} getMem={getMem} cats={cats} onDel={delExp} onClose={() => { setModal(null); setSel(null); }} user={user} isAdmin={isAdminUser} canEditCategory={isAdminUser && appSettings["ext_edit_expense_category"]?.enabled} onChangeCategory={async (expId, catId) => { await api.patch(`expenses?id=eq.${expId}`, { category_id: catId }, T); setExp(p => p.map(e => e.id === expId ? { ...e, category_id: catId } : e)); setSel(prev => ({ ...prev, category_id: catId })); pop("✏️ Category updated"); }} />}
+        {modal === "det"  && sel && <ModalDet  exp={sel} getCat={getCat} getMem={getMem} cats={cats} onDel={delExp} onClose={() => { setModal(null); setSel(null); }} user={user} isAdmin={isAdminUser} canEdit={isAdminUser && appSettings["ext_edit_expense_category"]?.enabled} onUpdate={async (expId, fields) => { await api.patch(`expenses?id=eq.${expId}`, fields, T); setExp(p => p.map(e => e.id === expId ? { ...e, ...fields } : e)); setSel(prev => ({ ...prev, ...fields })); pop("✏️ Expense updated"); }} />}
         {modal === "addM" && <ModalMem  onSave={addMem} onClose={() => setModal(null)} />}
         {modal === "eC"   && sel && <ModalCat  cat={sel} onSave={updCat} onDel={delCat} onClose={() => { setModal(null); setSel(null); }} />}
         {modal === "newC" && <ModalCat  cat={{ name:"", icon:"📌", color:PALETTE[0] }} onSave={addCat} onClose={() => setModal(null)} isNew />}
@@ -1996,8 +1996,8 @@ function ScreenAdm({ cats, members, expenses, budgets, noteHist, pendingProfiles
             Extensions add paid capabilities to your app. Toggle them on to activate.
           </div>
           <ExtensionCard
-            name="Edit Expense Category"
-            description="Admin can reassign any expense to a different category directly from the expense detail view."
+            name="Edit Expenses"
+            description="Admin can edit any expense — change the category, amount, date, or note. Useful for fixing entries added with wrong information."
             enabled={!!appSettings["ext_edit_expense_category"]?.enabled}
             onToggle={v => onUpsertSetting("ext_edit_expense_category", { enabled: v })}
           >
@@ -2174,14 +2174,32 @@ function ModalAdd({ cats, members, noteHist, isAdmin, onSave, onClose }) {
 }
 
 // ─── Modal: Expense Detail ────────────────────────────────────────────────────
-function ModalDet({ exp, getCat, getMem, cats, onDel, onClose, user, isAdmin, canEditCategory, onChangeCategory }) {
+function ModalDet({ exp, getCat, getMem, cats, onDel, onClose, user, isAdmin, canEdit, onUpdate }) {
   const cat = getCat(exp.category_id);
   const mem = getMem(exp.paid_by);
   const isOwn = exp.created_by && exp.created_by === user?.id;
   const withinWindow = exp.created_at && (Date.now() - new Date(exp.created_at).getTime()) < 30 * 24 * 3600 * 1000;
   const canDelete = isAdmin || (isOwn && withinWindow);
-  const [pickingCategory, setPickingCategory] = useState(false);
-  const [savingCat, setSavingCat] = useState(false);
+
+  const [editing, setEditing]     = useState(false);
+  const [editAmt,  setEditAmt]    = useState(String(exp.amount));
+  const [editDate, setEditDate]   = useState(exp.date);
+  const [editNote, setEditNote]   = useState(exp.note || "");
+  const [editCat,  setEditCat]    = useState(exp.category_id);
+  const [saving,   setSaving]     = useState(false);
+
+  const openEdit = () => {
+    setEditAmt(String(exp.amount)); setEditDate(exp.date);
+    setEditNote(exp.note || ""); setEditCat(exp.category_id);
+    setEditing(true);
+  };
+  const save = async () => {
+    if (!editAmt || isNaN(+editAmt)) return;
+    setSaving(true);
+    await onUpdate(exp.id, { amount: +editAmt, date: editDate, note: editNote.trim(), category_id: editCat });
+    setSaving(false); setEditing(false);
+  };
+
   return (
     <div className="ov" onClick={onClose}>
       <div className="mo" onClick={e => e.stopPropagation()}>
@@ -2193,13 +2211,13 @@ function ModalDet({ exp, getCat, getMem, cats, onDel, onClose, user, isAdmin, ca
             <div style={{ fontSize:26, fontWeight:800, color:"var(--tx)" }}>{fmt(exp.amount)}</div>
           </div>
         </div>
-        {exp.note && (
+        {exp.note && !editing && (
           <div className="dr" style={{ alignItems:"flex-start" }}>
             <span style={{ fontSize:13, color:"var(--mu)", fontWeight:500, flexShrink:0, marginTop:2 }}>Note</span>
             <span style={{ fontSize:14, color:"var(--tx)", fontWeight:600, textAlign:"right", whiteSpace:"pre-line", marginLeft:12 }}>{exp.note}</span>
           </div>
         )}
-        {[
+        {!editing && [
           { l:"Date",     v: new Date(exp.date + "T00:00:00").toLocaleDateString("en-CA", { weekday:"long", month:"long", day:"numeric", year:"numeric" }) },
           { l:"Paid by",  v: mem?.name || "Unknown" },
           { l:"Category", v: `${cat.icon} ${cat.name}` },
@@ -2209,38 +2227,46 @@ function ModalDet({ exp, getCat, getMem, cats, onDel, onClose, user, isAdmin, ca
             <span style={{ fontSize:14, color:"var(--tx)", fontWeight:600, textAlign:"right" }}>{r.v}</span>
           </div>
         ))}
-        {/* Admin: change category (Extension: ext_edit_expense_category) */}
-        {canEditCategory && (
-          <div style={{ marginTop:8 }}>
-            {!pickingCategory
-              ? <button onClick={() => setPickingCategory(true)} style={{ width:"100%", background:"var(--bg)", border:"1.5px solid var(--br)", borderRadius:10, padding:"11px 14px", fontSize:13, fontWeight:600, color:"var(--tx)", cursor:"pointer", fontFamily:"inherit", textAlign:"left" }}>
-                  ✏️ Change category
-                </button>
-              : (
-                <div>
-                  <div style={{ fontSize:11, fontWeight:700, color:"var(--mu)", textTransform:"uppercase", letterSpacing:.5, marginBottom:8 }}>Select new category</div>
-                  <div className="cg">
-                    {cats.map(c => (
-                      <div key={c.id} className={`ci${exp.category_id === c.id ? " on" : ""}`}
-                        onClick={async () => {
-                          if (c.id === exp.category_id) { setPickingCategory(false); return; }
-                          setSavingCat(true);
-                          await onChangeCategory(exp.id, c.id);
-                          setSavingCat(false); setPickingCategory(false);
-                        }}>
-                        <div style={{ fontSize:22 }}>{c.icon}</div>
-                        <div style={{ fontSize:10, fontWeight:700, color:"var(--mu)", textAlign:"center", lineHeight:1.2 }}>{c.name}</div>
-                      </div>
-                    ))}
+
+        {/* Admin edit form (Extension: Edit Expenses) */}
+        {canEdit && !editing && (
+          <button onClick={openEdit} style={{ width:"100%", background:"var(--bg)", border:"1.5px solid var(--br)", borderRadius:10, padding:"11px 14px", fontSize:13, fontWeight:600, color:"var(--tx)", cursor:"pointer", fontFamily:"inherit", textAlign:"left", marginTop:14 }}>
+            ✏️ Edit expense
+          </button>
+        )}
+        {editing && (
+          <div style={{ marginTop:14, display:"flex", flexDirection:"column", gap:12 }}>
+            <div className="fg">
+              <label className="fl">Amount ({_currCode})</label>
+              <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                <span style={{ fontSize:18, fontWeight:700, color:"var(--mu)" }}>{_currSym}</span>
+                <input className="fi" type="number" inputMode="decimal" value={editAmt} onChange={e => setEditAmt(e.target.value)} style={{ fontSize:18, fontWeight:700 }} />
+              </div>
+            </div>
+            <div className="fg">
+              <label className="fl">Date</label>
+              <input className="fi" type="date" value={editDate} onChange={e => setEditDate(e.target.value)} max={todayS()} style={{ display:"block", width:"90%", maxWidth:"90%", margin:"0 auto" }} />
+            </div>
+            <div className="fg">
+              <label className="fl">Note</label>
+              <textarea className="fi" rows={2} style={{ resize:"vertical", lineHeight:1.5, fontFamily:"inherit" }} value={editNote} onChange={e => setEditNote(e.target.value)} placeholder="What was this for?" />
+            </div>
+            <div className="fg">
+              <label className="fl">Category</label>
+              <div className="cg">
+                {cats.map(c => (
+                  <div key={c.id} className={`ci${editCat === c.id ? " on" : ""}`} onClick={() => setEditCat(c.id)}>
+                    <div style={{ fontSize:22 }}>{c.icon}</div>
+                    <div style={{ fontSize:10, fontWeight:700, color:"var(--mu)", textAlign:"center", lineHeight:1.2 }}>{c.name}</div>
                   </div>
-                  <button className="bg" style={{ marginTop:10 }} onClick={() => setPickingCategory(false)} disabled={savingCat}>
-                    {savingCat ? "Saving…" : "Cancel"}
-                  </button>
-                </div>
-              )
-            }
+                ))}
+              </div>
+            </div>
+            <button className="bp" onClick={save} disabled={saving || !editAmt}>{saving ? "Saving…" : "Save changes"}</button>
+            <button className="bg" onClick={() => setEditing(false)} disabled={saving}>Cancel</button>
           </div>
         )}
+
         <div style={{ height:16 }} />
         {canDelete
           ? <button className="bd" onClick={() => onDel(exp.id)}>🗑️  Delete expense</button>
