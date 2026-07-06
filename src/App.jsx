@@ -768,6 +768,7 @@ export default function App() {
   const [members, setMems]  = useState([]);
   const [budgets, setBuds]  = useState([]);
   const [noteHist, setNoteHist] = useState([]); // persists across expense deletion — see note-history.sql
+  const [appSettings, setAppSettings] = useState({}); // keyed by settings.key → settings.value
   const [loading, setLoad]  = useState(false);
 
   // Silent token refresh on mount when access token has expired but session is still within 30 days
@@ -883,14 +884,19 @@ export default function App() {
         api.get("expenses?order=date.desc,created_at.desc&limit=300", T),
         api.get("budgets?order=created_at", T),
         api.get("note_history?order=count.desc", T),
+        api.get("settings?select=key,value", T),
       ];
       if (isAdminUser) calls.push(api.get("profiles?status=eq.pending&order=created_at", T));
-      const [c, m, e, b, nh, pend] = await Promise.all(calls);
+      const [c, m, e, b, nh, sett, pend] = await Promise.all(calls);
       if (Array.isArray(c)) setCats(c);
       if (Array.isArray(m)) setMems(m);
       if (Array.isArray(e)) setExp(e);
       if (Array.isArray(b)) setBuds(b);
       if (Array.isArray(nh)) setNoteHist(nh);
+      if (Array.isArray(sett)) {
+        const map = {}; sett.forEach(s => { map[s.key] = s.value; });
+        setAppSettings(map);
+      }
       if (isAdminUser && Array.isArray(pend)) setPendingProfiles(pend);
     } catch { pop("⚠️ Error loading data"); }
     setLoad(false);
@@ -1118,6 +1124,15 @@ export default function App() {
     if (Array.isArray(res) && res[0]) setMems(p => [...p, res[0]]);
     setModal(null); pop("👤 Member added");
   };
+  const upsertSetting = async (key, value) => {
+    const res = await api.patch(`settings?key=eq.${key}`, { value, updated_by: user?.id, updated_at: new Date().toISOString() }, T);
+    if (!Array.isArray(res) || res.length === 0) {
+      // Row doesn't exist yet — insert it
+      await api.post("settings", { key, value, updated_by: user?.id }, T).catch(() => {});
+    }
+    setAppSettings(p => ({ ...p, [key]: value }));
+  };
+
   const archiveMember = async id => {
     const res = await api.patch(`members?id=eq.${id}`, { archived: true }, T);
     if (Array.isArray(res) && res[0]) setMems(p => p.map(m => m.id === id ? res[0] : m));
@@ -1216,7 +1231,7 @@ export default function App() {
 
         {/* Modals */}
         {modal === "add"  && <ModalAdd  cats={cats} members={members.filter(m => !m.archived)} noteHist={noteHist} isAdmin={isAdminUser} onSave={async e => { await addExp(e); setModal(null); }} onClose={() => setModal(null)} />}
-        {modal === "det"  && sel && <ModalDet  exp={sel} getCat={getCat} getMem={getMem} onDel={delExp} onClose={() => { setModal(null); setSel(null); }} user={user} isAdmin={isAdminUser} />}
+        {modal === "det"  && sel && <ModalDet  exp={sel} getCat={getCat} getMem={getMem} cats={cats} onDel={delExp} onClose={() => { setModal(null); setSel(null); }} user={user} isAdmin={isAdminUser} canEditCategory={isAdminUser && appSettings["ext_edit_expense_category"]?.enabled} onChangeCategory={async (expId, catId) => { await api.patch(`expenses?id=eq.${expId}`, { category_id: catId }, T); setExp(p => p.map(e => e.id === expId ? { ...e, category_id: catId } : e)); setSel(prev => ({ ...prev, category_id: catId })); pop("✏️ Category updated"); }} />}
         {modal === "addM" && <ModalMem  onSave={addMem} onClose={() => setModal(null)} />}
         {modal === "eC"   && sel && <ModalCat  cat={sel} onSave={updCat} onDel={delCat} onClose={() => { setModal(null); setSel(null); }} />}
         {modal === "newC" && <ModalCat  cat={{ name:"", icon:"📌", color:PALETTE[0] }} onSave={addCat} onClose={() => setModal(null)} isNew />}
@@ -1236,7 +1251,7 @@ export default function App() {
           {!loading && tab === "dashboard" && <ScreenDash rangeExp={rangeExp} rangeTotal={rangeTotal} rangeCatS={rangeCatS} rangeMemS={rangeMemS} catS={catS} cats={cats} members={members} buds={budgets} getCat={getCat} getMem={getMem} dashMode={dashMode} setDashMode={setDashMode} dashDate={dashDate} prevDay={prevDay} nextDay={nextDay} weeksBack={weeksBack} weekStart={weekStart} weekEnd={weekEnd} prevWeek={prevWeek} nextWeek={nextWeek} month={month} prevM={prevM} nextM={nextM} onE={e => { setSel(e); setModal("det"); }} onAll={() => setTab("expenses")} onSettings={openSettings} />}
           {!loading && tab === "expenses"  && <ScreenExp  expenses={expenses} cats={cats} getCat={getCat} getMem={getMem} onE={e => { setSel(e); setModal("det"); }} isAdmin={isAdminUser} onBulkDelete={bulkDeleteExp} />}
           {!loading && tab === "budgets"   && <ScreenBud  buds={budgets} cats={cats} catS={catS} getCat={getCat} month={month} prevM={prevM} nextM={nextM} onEdit={b => { setSel(b); setModal("eB"); }} onAdd={() => { setSel({ category_id: cats.find(c => !budgets.some(b => b.category_id === c.id))?.id || cats[0]?.id, limit_amount: 200 }); setModal("eB"); }} />}
-          {!loading && tab === "admin"     && <ScreenAdm  cats={cats} members={members} expenses={expenses} budgets={budgets} noteHist={noteHist} pendingProfiles={pendingProfiles} onApprove={approveProfile} onDecline={declineProfile} onArchiveMember={archiveMember} getCat={getCat} getMem={getMem} onEC={c => { setSel(c); setModal("eC"); }} onNewCat={() => setModal("newC")} onAM={() => setModal("addM")} onE={e => { setSel(e); setModal("det"); }} onOut={handleOut} user={user} darkMode={darkMode} toggleDark={toggleDark} currency={currency} onCurrency={handleCurrency} fontSize={fontSize} onFontSize={handleFontSize} t={adminTab} setT={setAdminTab} />}
+          {!loading && tab === "admin"     && <ScreenAdm  cats={cats} members={members} expenses={expenses} budgets={budgets} noteHist={noteHist} pendingProfiles={pendingProfiles} onApprove={approveProfile} onDecline={declineProfile} onArchiveMember={archiveMember} getCat={getCat} getMem={getMem} onEC={c => { setSel(c); setModal("eC"); }} onNewCat={() => setModal("newC")} onAM={() => setModal("addM")} onE={e => { setSel(e); setModal("det"); }} onOut={handleOut} user={user} darkMode={darkMode} toggleDark={toggleDark} currency={currency} onCurrency={handleCurrency} fontSize={fontSize} onFontSize={handleFontSize} t={adminTab} setT={setAdminTab} appSettings={appSettings} onUpsertSetting={upsertSetting} />}
         </div>
 
         {/* Bottom Nav (becomes left sidebar on tablet) */}
@@ -1685,7 +1700,7 @@ function ScreenBud({ buds, cats, catS, getCat, month, prevM, nextM, onEdit, onAd
 }
 
 // ─── Admin Screen ─────────────────────────────────────────────────────────────
-function ScreenAdm({ cats, members, expenses, budgets, noteHist, pendingProfiles, onApprove, onDecline, onArchiveMember, getCat, getMem, onEC, onNewCat, onAM, onE, onOut, user, darkMode, toggleDark, currency, onCurrency, fontSize, onFontSize, t, setT }) {
+function ScreenAdm({ cats, members, expenses, budgets, noteHist, pendingProfiles, onApprove, onDecline, onArchiveMember, getCat, getMem, onEC, onNewCat, onAM, onE, onOut, user, darkMode, toggleDark, currency, onCurrency, fontSize, onFontSize, t, setT, appSettings, onUpsertSetting }) {
   const [currencyOpen, setCurrencyOpen] = useState(false);
   const isAdmin = user?.email === ADMIN_EMAIL;
   const mt = members.filter(m => !m.archived).map(m => ({ ...m, total: expenses.filter(e => e.paid_by === m.id).reduce((s, e) => s + Number(e.amount), 0), cnt: expenses.filter(e => e.paid_by === m.id).length }));
@@ -1747,7 +1762,7 @@ function ScreenAdm({ cats, members, expenses, budgets, noteHist, pendingProfiles
         </div>
       </div>
       <div className="tabs">
-        {["members","categories","reports","settings"].map(x => (
+        {[..."members,categories,reports,settings".split(","), ...(isAdmin ? ["extensions"] : [])].map(x => (
           <button key={x} className={`tab${t === x ? " on" : ""}`} onClick={() => setT(x)}>{x[0].toUpperCase() + x.slice(1)}</button>
         ))}
       </div>
@@ -1974,6 +1989,55 @@ function ScreenAdm({ cats, members, expenses, budgets, noteHist, pendingProfiles
           </div>
         </div>
       )}
+
+      {t === "extensions" && isAdmin && (
+        <div style={{ padding:"0 16px 24px", display:"flex", flexDirection:"column", gap:12 }}>
+          <div style={{ fontSize:13, color:"var(--mu)", marginBottom:4 }}>
+            Extensions add paid capabilities to your app. Toggle them on to activate.
+          </div>
+          <ExtensionCard
+            name="Edit Expense Category"
+            description="Admin can reassign any expense to a different category directly from the expense detail view."
+            enabled={!!appSettings["ext_edit_expense_category"]?.enabled}
+            onToggle={v => onUpsertSetting("ext_edit_expense_category", { enabled: v })}
+          >
+            {/* No sub-settings for this extension */}
+            <div style={{ fontSize:12, color:"var(--mu)", padding:"8px 0 4px" }}>No additional settings for this extension.</div>
+          </ExtensionCard>
+          {/* Future extensions added here */}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Extension Card ───────────────────────────────────────────────────────────
+function ExtensionCard({ name, description, enabled, onToggle, children }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ background:"var(--card)", borderRadius:14, boxShadow:"0 1px 8px rgba(0,0,0,.06)", overflow:"hidden" }}>
+      <div style={{ display:"flex", alignItems:"flex-start", gap:12, padding:"16px 16px 14px" }}>
+        <div style={{ flex:1 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:4 }}>
+            <span style={{ fontSize:10, fontWeight:800, background:"var(--p)", color:"#fff", borderRadius:99, padding:"2px 7px", letterSpacing:.5, textTransform:"uppercase" }}>PRO</span>
+            <span style={{ fontSize:14, fontWeight:700, color:"var(--tx)" }}>{name}</span>
+          </div>
+          <div style={{ fontSize:12, color:"var(--mu)", lineHeight:1.5 }}>{description}</div>
+        </div>
+        {/* Toggle switch */}
+        <div onClick={() => onToggle(!enabled)} style={{ width:44, height:24, borderRadius:99, background: enabled ? "var(--p)" : "var(--br)", cursor:"pointer", flexShrink:0, display:"flex", alignItems:"center", padding:"0 3px", transition:"background .2s", marginTop:2 }}>
+          <div style={{ width:18, height:18, borderRadius:"50%", background:"#fff", boxShadow:"0 1px 3px rgba(0,0,0,.2)", transform: enabled ? "translateX(20px)" : "translateX(0)", transition:"transform .2s" }} />
+        </div>
+      </div>
+      {enabled && (
+        <div style={{ borderTop:"1px solid var(--br)" }}>
+          <button onClick={() => setOpen(o => !o)} style={{ width:"100%", background:"none", border:"none", padding:"10px 16px", fontSize:12, fontWeight:600, color:"var(--mu)", cursor:"pointer", display:"flex", justifyContent:"space-between", fontFamily:"inherit" }}>
+            <span>Extension settings</span>
+            <span>{open ? "▲" : "▼"}</span>
+          </button>
+          {open && <div style={{ padding:"0 16px 14px" }}>{children}</div>}
+        </div>
+      )}
     </div>
   );
 }
@@ -2110,12 +2174,14 @@ function ModalAdd({ cats, members, noteHist, isAdmin, onSave, onClose }) {
 }
 
 // ─── Modal: Expense Detail ────────────────────────────────────────────────────
-function ModalDet({ exp, getCat, getMem, onDel, onClose, user, isAdmin }) {
+function ModalDet({ exp, getCat, getMem, cats, onDel, onClose, user, isAdmin, canEditCategory, onChangeCategory }) {
   const cat = getCat(exp.category_id);
   const mem = getMem(exp.paid_by);
   const isOwn = exp.created_by && exp.created_by === user?.id;
   const withinWindow = exp.created_at && (Date.now() - new Date(exp.created_at).getTime()) < 30 * 24 * 3600 * 1000;
   const canDelete = isAdmin || (isOwn && withinWindow);
+  const [pickingCategory, setPickingCategory] = useState(false);
+  const [savingCat, setSavingCat] = useState(false);
   return (
     <div className="ov" onClick={onClose}>
       <div className="mo" onClick={e => e.stopPropagation()}>
@@ -2143,7 +2209,39 @@ function ModalDet({ exp, getCat, getMem, onDel, onClose, user, isAdmin }) {
             <span style={{ fontSize:14, color:"var(--tx)", fontWeight:600, textAlign:"right" }}>{r.v}</span>
           </div>
         ))}
-        <div style={{ height:22 }} />
+        {/* Admin: change category (Extension: ext_edit_expense_category) */}
+        {canEditCategory && (
+          <div style={{ marginTop:8 }}>
+            {!pickingCategory
+              ? <button onClick={() => setPickingCategory(true)} style={{ width:"100%", background:"var(--bg)", border:"1.5px solid var(--br)", borderRadius:10, padding:"11px 14px", fontSize:13, fontWeight:600, color:"var(--tx)", cursor:"pointer", fontFamily:"inherit", textAlign:"left" }}>
+                  ✏️ Change category
+                </button>
+              : (
+                <div>
+                  <div style={{ fontSize:11, fontWeight:700, color:"var(--mu)", textTransform:"uppercase", letterSpacing:.5, marginBottom:8 }}>Select new category</div>
+                  <div className="cg">
+                    {cats.map(c => (
+                      <div key={c.id} className={`ci${exp.category_id === c.id ? " on" : ""}`}
+                        onClick={async () => {
+                          if (c.id === exp.category_id) { setPickingCategory(false); return; }
+                          setSavingCat(true);
+                          await onChangeCategory(exp.id, c.id);
+                          setSavingCat(false); setPickingCategory(false);
+                        }}>
+                        <div style={{ fontSize:22 }}>{c.icon}</div>
+                        <div style={{ fontSize:10, fontWeight:700, color:"var(--mu)", textAlign:"center", lineHeight:1.2 }}>{c.name}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <button className="bg" style={{ marginTop:10 }} onClick={() => setPickingCategory(false)} disabled={savingCat}>
+                    {savingCat ? "Saving…" : "Cancel"}
+                  </button>
+                </div>
+              )
+            }
+          </div>
+        )}
+        <div style={{ height:16 }} />
         {canDelete
           ? <button className="bd" onClick={() => onDel(exp.id)}>🗑️  Delete expense</button>
           : <div style={{ background:"var(--bg)", border:"1.5px solid var(--br)", borderRadius:10, padding:11, fontSize:12, color:"var(--mu)", textAlign:"center" }}>
