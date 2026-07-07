@@ -20,7 +20,9 @@ const api = {
 const signIn       = (e, p) => fetch(`${SUPA_URL}/auth/v1/token?grant_type=password`,    { method: "POST", headers: BASE_H, body: JSON.stringify({ email: e, password: p }) }).then(r => r.json());
 const signUp       = (e, p) => fetch(`${SUPA_URL}/auth/v1/signup`,                        { method: "POST", headers: BASE_H, body: JSON.stringify({ email: e, password: p }) }).then(r => r.json());
 const refreshAccess = rt   => fetch(`${SUPA_URL}/auth/v1/token?grant_type=refresh_token`, { method: "POST", headers: BASE_H, body: JSON.stringify({ refresh_token: rt }) }).then(r => r.json());
-const sendRecovery  = (email) => fetch(`${SUPA_URL}/auth/v1/recover`, { method: "POST", headers: BASE_H, body: JSON.stringify({ email, redirect_to: "https://dgnwebs.github.io/family-expense/" }) }).then(r => r.json());
+// redirect_to must be a query parameter — GoTrue reads it from the URL,
+// not the JSON body, so putting it in the body has no effect.
+const sendRecovery  = (email) => fetch(`${SUPA_URL}/auth/v1/recover?redirect_to=${encodeURIComponent("https://dgnwebs.github.io/family-expense/")}`, { method: "POST", headers: BASE_H, body: JSON.stringify({ email }) }).then(r => r.json());
 // Uses the temporary recovery access_token from the email link — NOT the regular session token
 const setNewPassword = (newPwd, recoveryToken) => fetch(`${SUPA_URL}/auth/v1/user`, { method: "PUT", headers: { "Content-Type": "application/json", apikey: SUPA_KEY, Authorization: "Bearer " + recoveryToken }, body: JSON.stringify({ password: newPwd }) }).then(r => r.json());
 
