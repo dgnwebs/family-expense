@@ -20,6 +20,9 @@ const api = {
 const signIn       = (e, p) => fetch(`${SUPA_URL}/auth/v1/token?grant_type=password`,    { method: "POST", headers: BASE_H, body: JSON.stringify({ email: e, password: p }) }).then(r => r.json());
 const signUp       = (e, p) => fetch(`${SUPA_URL}/auth/v1/signup`,                        { method: "POST", headers: BASE_H, body: JSON.stringify({ email: e, password: p }) }).then(r => r.json());
 const refreshAccess = rt   => fetch(`${SUPA_URL}/auth/v1/token?grant_type=refresh_token`, { method: "POST", headers: BASE_H, body: JSON.stringify({ refresh_token: rt }) }).then(r => r.json());
+const sendRecovery  = (email) => fetch(`${SUPA_URL}/auth/v1/recover`, { method: "POST", headers: BASE_H, body: JSON.stringify({ email, redirect_to: "https://dgnwebs.github.io/family-expense/" }) }).then(r => r.json());
+// Uses the temporary recovery access_token from the email link — NOT the regular session token
+const setNewPassword = (newPwd, recoveryToken) => fetch(`${SUPA_URL}/auth/v1/user`, { method: "PUT", headers: { "Content-Type": "application/json", apikey: SUPA_KEY, Authorization: "Bearer " + recoveryToken }, body: JSON.stringify({ password: newPwd }) }).then(r => r.json());
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const DEFAULT_CATS = [
@@ -252,6 +255,27 @@ const FONT_SIZES = [
   { id: "large",   lbl: "Large",   scale: 1.3 },
   { id: "huge",    lbl: "Huge",    scale: 1.5 },
 ];
+
+// ─── Password-reset rate limiter ──────────────────────────────────────────────
+const PWD_RL_KEY      = "fe_pwd_reset";
+const PWD_COOLDOWN_S  = 60;
+const PWD_MAX_PER_DAY = 3;
+const getPwdRateInfo = () => {
+  try {
+    const s = JSON.parse(localStorage.getItem(PWD_RL_KEY) || "{}");
+    const today = new Date().toLocaleDateString("en-CA", { timeZone:"Asia/Kolkata" });
+    const count   = s.date === today ? (s.count || 0) : 0;
+    const elapsed = Math.floor((Date.now() - (s.lastMs || 0)) / 1000);
+    const cooldown = Math.max(0, PWD_COOLDOWN_S - elapsed);
+    return { count, cooldown, canSend: count < PWD_MAX_PER_DAY && cooldown === 0 };
+  } catch { return { count: 0, cooldown: 0, canSend: true }; }
+};
+const recordPwdRequest = () => {
+  const today = new Date().toLocaleDateString("en-CA", { timeZone:"Asia/Kolkata" });
+  const s = JSON.parse(localStorage.getItem(PWD_RL_KEY) || "{}");
+  const count = s.date === today ? (s.count || 0) : 0;
+  localStorage.setItem(PWD_RL_KEY, JSON.stringify({ date: today, count: count + 1, lastMs: Date.now() }));
+};
 
 // ─── Module-level currency (avoids prop-drilling fmt everywhere) ───────────────
 let _currSym  = "₹";
@@ -714,9 +738,108 @@ function Login({ onLogin }) {
           style={{ width:"100%", marginTop:10, background:"none", border:"none", color:"var(--p)", fontSize:13, fontWeight:600, cursor:"pointer", padding:"9px 0", fontFamily:"inherit" }}>
           {isNew ? "Already have an account? Sign in" : "No account? Sign up"}
         </button>
+        {!isNew && <ForgotPasswordLink />}
       </div>
       <div style={{ fontSize:11, color:"var(--mu)", marginTop:20, textAlign:"center", lineHeight:1.6 }}>
         All family members sign in here.<br />New sign-ups need the account owner's approval before they can start.
+      </div>
+    </div>
+  );
+}
+
+// ─── Forgot Password link + inline form ──────────────────────────────────────
+function ForgotPasswordLink() {
+  const [open,    setOpen]    = useState(false);
+  const [fpEmail, setFpEmail] = useState("");
+  const [fpBusy,  setFpBusy]  = useState(false);
+  const [fpMsg,   setFpMsg]   = useState("");
+  const [fpErr,   setFpErr]   = useState("");
+  const [rl,      setRl]      = useState(getPwdRateInfo);
+
+  // Tick down the cooldown timer every second
+  useEffect(() => {
+    if (rl.cooldown <= 0) return;
+    const id = setInterval(() => setRl(getPwdRateInfo()), 1000);
+    return () => clearInterval(id);
+  }, [rl.cooldown]);
+
+  const send = async () => {
+    if (!fpEmail || !rl.canSend) return;
+    setFpBusy(true); setFpErr("");
+    const res = await sendRecovery(fpEmail).catch(() => null);
+    setFpBusy(false);
+    if (res?.error || res?.code >= 400) {
+      setFpErr(res?.msg || res?.message || "Something went wrong. Please try again.");
+      return;
+    }
+    recordPwdRequest();
+    setRl(getPwdRateInfo());
+    setFpMsg("Check your email — a reset link has been sent.");
+  };
+
+  if (!open) return (
+    <button onClick={() => setOpen(true)} style={{ width:"100%", marginTop:4, background:"none", border:"none", color:"var(--mu)", fontSize:12, cursor:"pointer", padding:"6px 0", fontFamily:"inherit" }}>
+      Forgot password?
+    </button>
+  );
+
+  return (
+    <div style={{ marginTop:12, padding:"14px", background:"var(--bg)", borderRadius:10 }}>
+      <div style={{ fontSize:13, fontWeight:700, color:"var(--tx)", marginBottom:8 }}>Reset password</div>
+      {fpMsg
+        ? <div style={{ fontSize:13, color:"var(--g)", marginBottom:8 }}>{fpMsg}</div>
+        : <>
+            <input className="fi" style={{ marginBottom:8 }} placeholder="Your email" type="email" value={fpEmail} onChange={e => setFpEmail(e.target.value)} />
+            {fpErr && <div style={{ fontSize:12, color:"var(--rd)", marginBottom:8 }}>{fpErr}</div>}
+            {!rl.canSend && rl.cooldown > 0 && <div style={{ fontSize:11, color:"var(--mu)", marginBottom:8 }}>Wait {rl.cooldown}s before resending.</div>}
+            {!rl.canSend && rl.count >= 3 && <div style={{ fontSize:11, color:"var(--mu)", marginBottom:8 }}>Max 3 requests per day. Try again tomorrow.</div>}
+            <button className="bp" onClick={send} disabled={fpBusy || !fpEmail || !rl.canSend} style={{ marginBottom:8 }}>
+              {fpBusy ? "Sending…" : "Send reset link"}
+            </button>
+          </>
+      }
+      <button onClick={() => { setOpen(false); setFpMsg(""); setFpErr(""); }} style={{ background:"none", border:"none", color:"var(--mu)", fontSize:12, cursor:"pointer", fontFamily:"inherit", padding:0 }}>← Back to login</button>
+    </div>
+  );
+}
+
+// ─── Reset Password screen (shown when recovery link is opened) ──────────────
+function ResetPassword({ token }) {
+  const [pwd,     setPwd]     = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [busy,    setBusy]    = useState(false);
+  const [err,     setErr]     = useState("");
+  const [done,    setDone]    = useState(false);
+
+  const save = async () => {
+    if (pwd.length < 6) { setErr("Password must be at least 6 characters."); return; }
+    if (pwd !== confirm) { setErr("Passwords don't match."); return; }
+    setBusy(true); setErr("");
+    const res = await setNewPassword(pwd, token);
+    setBusy(false);
+    if (res?.error || res?.code >= 400) { setErr(res?.msg || res?.message || "Failed. The reset link may have expired — request a new one."); return; }
+    setDone(true);
+  };
+
+  return (
+    <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", height:"100%", padding:24 }}>
+      <img src={`${import.meta.env.BASE_URL}icon-512.png`} alt="" style={{ width:72, height:72, borderRadius:18, marginBottom:16, boxShadow:"0 4px 16px rgba(30,58,138,.25)" }} />
+      <div style={{ fontSize:22, fontWeight:800, color:"var(--tx)", marginBottom:4 }}>Set new password</div>
+      <div style={{ fontSize:13, color:"var(--mu)", marginBottom:28 }}>Family Expense</div>
+      <div style={{ width:"100%", background:"var(--card)", borderRadius:18, padding:22, boxShadow:"0 4px 24px rgba(30,58,138,.1)" }}>
+        {done
+          ? <>
+              <div style={{ fontSize:15, fontWeight:700, color:"var(--g)", textAlign:"center", marginBottom:14 }}>✅ Password updated!</div>
+              <div style={{ fontSize:13, color:"var(--mu)", textAlign:"center", marginBottom:18 }}>You can now sign in with your new password.</div>
+              <button className="bp" onClick={() => window.location.reload()}>Go to login</button>
+            </>
+          : <>
+              {err && <div style={{ background:"#FEF2F2", color:"var(--rd)", padding:"10px 13px", borderRadius:8, fontSize:13, marginBottom:12, fontWeight:500 }}>{err}</div>}
+              <input className="fi" style={{ marginBottom:10 }} type="password" placeholder="New password (min 6 chars)" value={pwd} onChange={e => setPwd(e.target.value)} />
+              <input className="fi" style={{ marginBottom:18 }} type="password" placeholder="Confirm new password" value={confirm} onChange={e => setConfirm(e.target.value)} onKeyDown={e => e.key === "Enter" && save()} />
+              <button className="bp" onClick={save} disabled={busy || !pwd || !confirm}>{busy ? "Saving…" : "Set new password"}</button>
+            </>
+        }
       </div>
     </div>
   );
@@ -742,6 +865,18 @@ export default function App() {
   const _s = getRawSession();
   const _sessionAlive = _s && (!_s.session_expires_at || _s.session_expires_at > Date.now() / 1000);
   const _tokenFresh   = _sessionAlive && _s.expires_at > Date.now() / 1000 + 30;
+
+  // Check for a password-recovery link hash BEFORE any other state — clear it
+  // from the URL immediately so it never ends up in browser history.
+  const [recoveryToken] = useState(() => {
+    const hash = window.location.hash;
+    if (hash.includes("type=recovery")) {
+      const p = new URLSearchParams(hash.slice(1));
+      const t = p.get("access_token");
+      if (t) { window.history.replaceState(null, "", window.location.pathname); return t; }
+    }
+    return null;
+  });
 
   const [token,    setToken] = useState(_tokenFresh ? _s.token : null);
   const [user,     setUser]  = useState(_sessionAlive ? _s.user : null);
@@ -1194,6 +1329,14 @@ export default function App() {
     // none (tablet via @media — inline styles can't be overridden by media
     // queries, so it has to live in the stylesheet, not here).
   };
+
+  // Recovery link from email — show reset-password screen regardless of login state
+  if (recoveryToken) return (
+    <>
+      <style>{STYLES}</style>
+      <div className="app" style={appStyle}><ResetPassword token={recoveryToken} /></div>
+    </>
+  );
 
   if (booting) return (
     <>
